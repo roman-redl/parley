@@ -57,6 +57,12 @@ interface:
 # enforce: false keeps the selection of models outside the specs available.
 modelSpecs:
   enforce: false
+  # Providers listed here appear in the model menu next to the bots (requires
+  # interface.modelSelect: true); without it only the bots are selectable.
+  addedEndpoints:
+    - anthropic
+    - google
+    - openAI
   # false: a new chat keeps the last selection instead of opening the first bot (Opus) every time.
   prioritize: false
   list:
