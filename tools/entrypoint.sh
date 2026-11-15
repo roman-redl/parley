@@ -23,7 +23,10 @@ node /opt/parley/init-config.mjs "$DC_DIST"
 # --stateful mode: DesktopCommander terminal sessions (start_process,
 # read_process_output) live in a child process; without it every request would
 # start a new process and sessions would be lost between calls.
+# --logLevel none: supergateway otherwise logs every JSON-RPC message, including the full
+# tool outputs (that is, the contents of the notes) into the container log.
 exec supergateway \
+  --logLevel none \
   --stdio "desktop-commander --no-onboarding" \
   --outputTransport streamableHttp \
   --stateful \
