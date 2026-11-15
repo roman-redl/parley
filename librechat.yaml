@@ -16,11 +16,36 @@ mcpServers:
     # Milliseconds per request to the server; headroom for git push and long commands.
     timeout: 120000
 
+  # Headless browser (Playwright MCP) for reading web pages. The server is started with
+  # --snapshot-mode none, so tool results stay small; the bot saves a page snapshot to a file
+  # in /data/web (browser_snapshot with a filename) and searches the file in the tools terminal.
+  # /data/web is the same directory in both containers.
+  playwright:
+    type: streamable-http
+    url: http://playwright:8931/mcp
+    title: Browser
+    description: Headless browser (Playwright); page snapshots are saved to files in /data/web
+    requiresOAuth: false
+    # Milliseconds per request; page navigation inside the server times out at 60 seconds.
+    timeout: 90000
+    # One MCP session (one isolated browser context, one tab) per chat request instead of one
+    # app-level connection shared by everybody: with a shared connection all chats would use the
+    # same tab, and concurrent chats would overwrite each other's page. The header is not used by
+    # the browser server; a {{LIBRECHAT_BODY_*}} placeholder in requestHeaders is what makes
+    # LibreChat treat the connection as request-scoped (created for each chat request, closed
+    # when the request ends; tool discovery omits requestHeaders). Consequence: the open page
+    # lives only within one turn; the next turn starts with an empty browser, so the bot opens
+    # the page again. Snapshot files in /data/web remain.
+    requestHeaders:
+      X-Parley-Conversation: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+
 # LibreChat blocks requests to private addresses by default (SSRF protection).
-# The tools container is an internal compose service, so its address is allowed explicitly.
+# The tools and playwright containers are internal compose services, so their addresses are
+# allowed explicitly.
 mcpSettings:
   allowedAddresses:
     - "tools:8000"
+    - "playwright:8931"
 
 # Speech-to-text: OpenAI. The key comes from .env.
 speech:
@@ -39,13 +64,28 @@ interface:
   bookmarks: false
   multiConvo: false
   runCode: false
-  webSearch: false
+  # Must be true: it grants the WEB_SEARCH permission to the roles, and without it LibreChat
+  # silently strips the providers' native web search (web_search in the bot presets) as well.
+  # The web search button in the chat starts LibreChat's own search, which is not configured
+  # here and replaces the native tool: leave it off.
+  webSearch: true
   fileSearch: false
   # With modelSpecs present LibreChat hides the model selector unless this is set explicitly.
   # Keeps the free choice of any provider model next to the bots.
   modelSelect: true
   # LibreChat hides the parameters panel when modelSpecs exist; keep reasoning/thinking controls.
   parameters: true
+
+# Defaults for every endpoint. Only the tool result cap is set here; no other endpoint option
+# changes. A single read_file of a web page (isUrl) once returned 400,000 characters
+# (about 206k tokens) and was resent with every later request of the conversation. Longer
+# results are cut to this size: head and tail are kept, the middle is replaced by a
+# "[truncated: N chars exceeded 40000 limit]" notice.
+# Caution: chat title generation reads endpoints.all instead of a per-endpoint block, so
+# title settings added later under a specific endpoint would be ignored while `all` exists.
+endpoints:
+  all:
+    maxToolResultChars: 40000
 
 # Bots. Each bot is a model spec: a model plus a short instruction that makes it read its role
 # from the Obsidian vault at the start of every conversation (the vault is mounted into the
@@ -66,38 +106,192 @@ modelSpecs:
   # false: a new chat keeps the last selection instead of opening the first bot (Opus) every time.
   prioritize: false
   list:
-    - name: Erudite-assistant
-      label: Erudite-assistant
-      description: Personal analyst with the full context of the vault (Claude Opus)
+    - name: Erudite-assistant-Opus
+      label: Erudite-assistant-Opus
+      description: Personal analyst with the full context of the vault (Claude Opus, high effort, web search)
       mcpServers:
         - tools
+        - playwright
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
-        modelLabel: Erudite-assistant
+        modelLabel: Erudite-assistant-Opus
+        # Reasoning effort (sent as output_config.effort).
+        effort: high
+        # Anthropic's native server-side web search tool. LibreChat's own webSearch is not
+        # enabled (neither interface.webSearch nor spec-level webSearch): it would replace
+        # the native tool.
+        web_search: true
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
 
-    - name: English-friend
-      label: English-friend
-      description: English tutor and text corrector (OpenAI gpt-6-luna)
+    # The same role file as Erudite-assistant-Opus, on Gemini 4 Argon and Hydrogen. Notes:
+    # LibreChat v0.8.8 has no price or context window data for these models (LibreChat issue
+    # #17074), and the sources of the native search (Google Search grounding) are not shown in
+    # the UI (issue #16665).
+
+    - name: Erudite-assistant-Argon
+      label: Erudite-assistant-Argon
+      description: Personal analyst with the full context of the vault (Gemini 4 Argon, high thinking level, web search)
       mcpServers:
         - tools
+        - playwright
       preset:
-        endpoint: openAI
-        model: gpt-6-luna
-        modelLabel: English-friend
+        endpoint: google
+        model: gemini-4-argon
+        modelLabel: Erudite-assistant-Argon
+        thinking: true
+        thinkingLevel: high
+        # Required: without data for the model LibreChat falls back to the generic "gemini"
+        # window (30,720) minus the 65,535 output tokens, i.e. a 1,024-token context.
+        maxContextTokens: 1000000
+        # Google Search grounding. Do not enable LibreChat's own webSearch: it would remove the native tool.
+        web_search: true
         promptPrefix: |
-          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/English-friend.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Erudite-assistant-Hydrogen
+      label: Erudite-assistant-Hydrogen
+      description: Personal analyst with the full context of the vault (Gemini 4 Hydrogen, high thinking level, web search)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: google
+        model: gemini-4-hydrogen
+        modelLabel: Erudite-assistant-Hydrogen
+        thinking: true
+        thinkingLevel: high
+        # Required, as for Argon.
+        maxContextTokens: 1000000
+        # Google Search grounding.
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Doctor
+      label: Doctor
+      description: "Diagnostic physician: history taking, review of examinations, treatment plan audit (Claude Opus, high effort, web search)"
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: Doctor
+        effort: high
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Doctor.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: BackEnder
+      label: BackEnder
+      description: "Technical consultant: system setup, infrastructure, backend and computer science theory (Claude Opus, high effort, web search)"
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: BackEnder
+        effort: high
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/BackEnder.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Backender-villain
+      label: Backender-villain
+      description: Shadow career advisor and Senior Backend (Go) mentor (Claude Opus, high effort, web search)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: Backender-villain
+        effort: high
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Backender-villain.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Insightful-genius
+      label: Insightful-genius
+      description: Finds the constraints and the clarifying questions for a problem before it is solved (Claude Opus, high effort, web search)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: Insightful-genius
+        effort: high
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Insightful-genius.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Avtor
+      label: Avtor
+      description: Editor that writes posts and replies in the voice of the Telegram channel author from raw thoughts or a draft (Claude Opus, high effort, web search)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: Avtor
+        effort: high
+        web_search: true
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Avtor.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
 
     - name: Brilliant-Sage
       label: Brilliant-Sage
       description: Truth, science and logic without moral censorship (Gemini Flash)
       mcpServers:
         - tools
+        - playwright
       preset:
         endpoint: google
         model: gemini-3.8-flash
         modelLabel: Brilliant-Sage
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Brilliant-Sage.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: English-friend
+      label: English-friend
+      description: English tutor and text corrector (OpenAI gpt-5.4-mini)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: openAI
+        model: gpt-5.4-mini
+        modelLabel: English-friend
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/English-friend.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: Engspeech-fixer
+      label: Engspeech-fixer
+      description: Review of spoken English from lessons and mock interviews, vocabulary upgrade to Senior level (OpenAI gpt-5.4)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: openAI
+        model: gpt-5.4
+        modelLabel: Engspeech-fixer
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Engspeech-fixer.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
+
+    - name: WingswingMan
+      label: WingswingMan
+      description: Conversational English with corrections at the end of the reply (OpenAI gpt-5.4-mini)
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: openAI
+        model: gpt-5.4-mini
+        modelLabel: WingswingMan
+        promptPrefix: |
+          В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/WingswingMan.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать.
