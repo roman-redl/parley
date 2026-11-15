@@ -209,6 +209,12 @@ git pull
 docker compose up -d --build
 ```
 
+`librechat.yaml` is bind-mounted as a single file: compose does not notice its changes, and `git pull` replaces the file (new inode), so the running container keeps the old version. After a change to `librechat.yaml` recreate LibreChat explicitly:
+
+```bash
+docker compose up -d --force-recreate librechat
+```
+
 Image versions are pinned in `docker-compose.yml` and `tools/Dockerfile`; changing them is a separate, deliberate change.
 
 ## Adding a model
