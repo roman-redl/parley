@@ -136,6 +136,11 @@ services:
     environment:
       # The user from .env has no home directory in the image; chromium needs a writable one.
       HOME: /tmp
+      # Off: the server pings the client every 3 s and closes the session after 5 s without an
+      # answer. LibreChat does not answer while the model is thinking between tool calls, so the
+      # second call of a turn failed with "Session not found". Sessions still end: LibreChat
+      # closes the request-scoped connection when the turn ends.
+      PLAYWRIGHT_MCP_PING_TIMEOUT_MS: "0"
     # Chromium needs more shared memory than the Docker default of 64 MB.
     shm_size: 1gb
     mem_limit: 3g
