@@ -70,9 +70,11 @@ services:
       # by ";", keys in the same order). The Gemini URL has no trailing slash.
       OPENAI_API_BASE_URLS: "https://api.anthropic.com/v1;https://generativelanguage.googleapis.com/v1beta/openai;https://api.openai.com/v1"
       OPENAI_API_KEYS: "${ANTHROPIC_API_KEY:-};${GOOGLE_KEY:-};${OPENAI_API_KEY:-}"
-      # Connection 2 (OpenAI) uses the Responses API: on Chat Completions gpt-6-luna accepts
-      # function tools only with reasoning_effort "none", and Open WebUI does not set it.
-      OPENAI_API_CONFIGS: '{"2":{"api_type":"responses"}}'
+      # Per-connection settings, keyed by the connection index above. model_ids limits each
+      # provider to chat models: Gemini otherwise lists TTS and embedding models that fail
+      # with tools. Connection 2 (OpenAI) uses the Responses API: on Chat Completions
+      # gpt-6-luna accepts function tools only with reasoning_effort "none".
+      OPENAI_API_CONFIGS: '{"0":{"model_ids":["claude-opus-5-5","claude-sonnet-5-5","claude-haiku-5-5"]},"1":{"model_ids":["gemini-3.8-flash","gemini-4-argon","gemini-4-carbon"]},"2":{"api_type":"responses","model_ids":["gpt-6-luna"]}}'
       # Speech-to-text: OpenAI.
       AUDIO_STT_ENGINE: openai
       AUDIO_STT_OPENAI_API_BASE_URL: https://api.openai.com/v1
