@@ -2,43 +2,78 @@
 
 A personal Poe-like service on a VPS: a chat interface with several models, voice input and bots that can reach files and a terminal. The repository holds only configs, no code.
 
-Two chat interfaces currently run on one VPS for comparison on a phone: LibreChat (the main candidate) and Open WebUI. Login is by password, without two-factor authentication.
+The chat interface is LibreChat, running on one VPS. Login is by password, without two-factor authentication.
 
 - Models over API: Anthropic, Gemini and OpenAI.
 - Speech-to-text: OpenAI (`gpt-transcribe`).
-- Bots are LibreChat model specs (`modelSpecs` in `librechat.yaml`). Their tools come from one shared MCP container: files and a terminal in the clones of two git repositories, the Obsidian vault `notes` and `handoff`. Commits and pushes use deploy keys.
+- Bots are LibreChat model specs (`modelSpecs` in `librechat.yaml`). Their tools come from two MCP containers: files and a terminal in the clones of two git repositories, the Obsidian vault `notes` and `handoff` (commits and pushes use deploy keys), and a headless browser for reading web pages.
 
 ## Architecture
 
 | Service | Image | Port | Purpose |
 | --- | --- | --- | --- |
-| `librechat` | `registry.librechat.ai/librechat-ai/librechat:v0.8.8` | `parley-librechat:3080` on the Caddy network, `127.0.0.1:3080` | main chat interface, bots |
+| `librechat` | built from `./librechat` on top of `registry.librechat.ai/librechat-ai/librechat:v0.8.8` | `parley-librechat:3080` on the Caddy network, `127.0.0.1:3080` | chat interface, bots |
 | `mongodb` | `mongo:8.0.20` | internal | LibreChat database, no authentication and no ports exposed |
-| `open-webui` | `ghcr.io/open-webui/open-webui:v0.13.3` | `parley-webui:8080` on the Caddy network, `127.0.0.1:8080` | second chat interface for comparison |
 | `tools` | built from `./tools` | internal, `8000` (`/mcp`) | MCP server: DesktopCommander behind supergateway |
+| `playwright` | `mcr.microsoft.com/playwright/mcp:v0.0.85` | internal, `8931` (`/mcp`) | MCP server: headless Chromium (Playwright MCP) |
 
-Caddy runs in a container of the selfhost-music compose project and proxies to `parley-librechat:3080` and `parley-webui:8080` over the shared `CADDY_NETWORK` network (default `selfhost-music_default`). The ports on the host's `127.0.0.1` exist only for access through an ssh tunnel.
+Caddy runs in a container of the selfhost-music compose project and proxies to `parley-librechat:3080` over the shared `CADDY_NETWORK` network (default `selfhost-music_default`). The port on the host's `127.0.0.1` exists only for access through an ssh tunnel.
+
+The `librechat` image is derived from the official one (`librechat/Dockerfile`). The only change is the PWA theme colour: the manifest of LibreChat sets `theme_color` to `#009688`, which paints a green status bar in the Android PWA. The build replaces it with `#171717` (the colour of `<meta name="theme-color">` in `index.html`) and updates the revision of the manifest in the service worker precache; without the second step installed clients keep the old manifest. The build fails if the patterns it patches are not found, so an upgrade of LibreChat that changes these files does not go unnoticed. After the colour changes, an installed PWA picks it up when its service worker updates; to get it at once, remove the PWA from the phone and install it again.
 
 The `tools` container:
 
 - file operations are limited to `/data` (`/data/notes`, `/data/handoff`);
 - the terminal is not limited to that directory: `git commit`, `git pull` and `git push` run through it;
+- the terminal can also open an ssh session to the VPS host (`ssh vps`, the user `ubuntu` with passwordless sudo): the bots have full shell access to the host (section 2); this is a deliberate choice of the owner;
 - the DesktopCommander config and logs live in `./data/tools/desktop-commander` and survive container recreation;
-- on every start DesktopCommander telemetry is switched off and `allowedDirectories` is set to `/data`.
+- on every start DesktopCommander telemetry is switched off and `allowedDirectories` is set to `/data`;
+- `curl` and `pdftotext` (poppler-utils) are installed next to `ripgrep`: web pages and PDFs are downloaded into files and searched there;
+
+The `playwright` container is the official Playwright MCP image (linux/arm64 included) with headless Chromium; the server speaks streamable HTTP on port 8931 and is reached by the bots only through LibreChat. The flags are in `docker-compose.yml`, each with a comment. How a page is read:
+
+1. `browser_navigate` opens the URL. The server runs with `--snapshot-mode none`, so this call and the other actions (`browser_click`, `browser_type`, ...) return only a few lines: the page URL and title.
+2. `browser_snapshot` with a `filename` such as `/data/web/<name>.yml` writes the accessibility snapshot of the page to a file and returns only the file path.
+3. The bot searches the file in the `tools` terminal (`rg -n -C 5 <text> /data/web/<name>.yml`, then `sed -n '120,180p'`) and reads only the lines it needs. Element references from the snapshot (`ref=e52`) work in `browser_click` and `browser_type`.
+
+`browser_snapshot` without a `filename` still returns the whole snapshot inline (about 90 KB for a long Wikipedia article); no flag prevents it, so the bot rules must forbid it. The cap `maxToolResultChars` then limits the damage to 40,000 characters. `browser_find` (search in the snapshot, with `maxResults` and an optional `filename`) is available as well.
+
+`./data/web` is mounted at the same path `/data/web` in `playwright` and `tools`: a path returned by the browser works in the terminal. The browser may write only there (its working directory and `--output-dir`; other paths are refused, `file:` URLs are blocked). The directory is scratch space: it also receives console logs of the browser, downloaded PDFs and Jina Reader output. When its files exceed 200 MB (`--output-max-size`), the browser deletes the oldest ones after each tool call; no cron job is needed. Files of the `tools` container are root-owned, which is fine for deletion because the directory belongs to the host user; bots keep files directly in `/data/web`, without subdirectories.
+
+The browser has no authentication. It sits on its own `browser` network, shared only with `librechat` (the bots reach it through LibreChat), and is not on the `default` network: it cannot open `tools:8000` (the shell MCP server without authentication) or `mongodb` (the `db` network). It can reach `librechat:3080` and the whole internet (the `browser` network is a regular bridge, not internal; the browser needs the internet). Known remaining reach: the Docker gateway of the host and the cloud metadata service `169.254.169.254` (Oracle; version 1 of its API answers without a token). Like the shell access of the `tools` container, the browser is open to anyone who can talk to a bot with these servers.
+
+Browser state lives only as long as one MCP session. `--isolated` keeps the profile in memory (cookies, logins, open tabs); each MCP session gets its own isolated context. In `librechat.yaml` the `playwright` server has a `requestHeaders` entry with `{{LIBRECHAT_BODY_CONVERSATIONID}}`; it is not used by the server, its purpose is to make LibreChat open a separate MCP session for each chat request instead of one shared connection for all chats (otherwise all chats would share one browser tab and concurrent chats would overwrite each other's page). Within one turn (one request, including all its tool calls) the page stays open; the session is closed when the turn ends, so the next turn starts with an empty browser and the bot opens the page again. Snapshot files in `/data/web` remain and can be searched in the next turn. Chromium takes about 300 MB when idle and more on heavy pages: the container is limited to 3 GB (`mem_limit`) and has a 1 GB `/dev/shm`.
 
 ## Bots
 
 A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. At the start of a conversation the instruction makes the bot run `git pull --rebase` in the vault clone, then read two files from the vault: the shared bot rules and the file of its own role (a `text` block in each). Those texts become the bot's system prompt for the rest of the conversation. Editing a prompt in Obsidian therefore takes effect without a redeploy: it is enough for the change to reach the vault clone on the VPS.
 
-Bots of the first stage:
+Bots:
 
 | Bot | Provider | Model |
 | --- | --- | --- |
-| `Erudite-assistant` | Anthropic | `claude-opus-5-5` |
-| `English-friend` | OpenAI | `gpt-6-luna` |
+| `Erudite-assistant-Opus` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `Erudite-assistant-Argon` | Google | `gemini-4-argon`, thinking level `high`, native web search (Google Search grounding) |
+| `Erudite-assistant-Hydrogen` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
+| `Doctor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `BackEnder` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `Backender-villain` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `Insightful-genius` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `Avtor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `Brilliant-Sage` | Google | `gemini-3.8-flash` |
+| `English-friend` | OpenAI | `gpt-5.4-mini` |
+| `Engspeech-fixer` | OpenAI | `gpt-5.4` |
+| `WingswingMan` | OpenAI | `gpt-5.4-mini` |
 
-`enforce` is `false` and `interface.modelSelect` is `true`: models outside the specs stay selectable. LibreChat 0.8.8 talks to `gpt-6-luna` through the Responses API, so its tool calls work with any reasoning effort.
+Each bot reads the role file with its own name from the `prompts` folder of the vault (`Doctor.md`, `BackEnder.md`, ...; the Erudite variants share `Erudite-assistant.md`).
+
+All Erudite-assistant variants read the same role file. Web search is the provider's native tool (`web_search: true` in the preset), not LibreChat's own web search, which would replace it and is not configured. `interface.webSearch` is nevertheless `true`: it grants the roles the web search permission, and without it LibreChat silently strips the native tool too. The web search button in the chat starts LibreChat's own search; leave it off. LibreChat 0.8.8 has no price or context window data for `gemini-4-argon` and `gemini-4-hydrogen`: the preset sets `maxContextTokens` explicitly (otherwise the window becomes 1,024 tokens), and spending on it is not counted. The sources of the native search are not shown in the UI.
+
+All bots also get the `playwright` MCP server (`mcpServers` of each spec). The rules for reading the web (search first, then Jina Reader, the browser when Jina fails or the page needs interaction, PDFs through `curl` and `pdftotext`) live in the shared bot rules in the vault, not here.
+
+`endpoints.all.maxToolResultChars` in `librechat.yaml` caps a single tool result at 40,000 characters. A longer result is cut: its head and tail are kept and the middle is replaced by a `[truncated: N chars exceeded 40000 limit]` notice. Without the cap one read of a web page returned about 206k tokens, which was resent with every later request of the conversation.
+
+`enforce` is `false` and `interface.modelSelect` is `true`: models outside the specs stay selectable. LibreChat 0.8.8 talks to `gpt-6-luna` through the Responses API, so its tool calls work with any reasoning effort. `gpt-5.4` and `gpt-5.4-mini` run on Chat Completions: function tool calls work with the default reasoning effort; if a reasoning effort other than `none` is chosen in the chat parameters and tool calls fail with a 400, switch the model to the Responses API (`useResponsesApi` in the preset). LibreChat 0.8.8 knows both models (context window, price), so no `maxContextTokens` is set for them.
 
 A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in the vault), then:
 
@@ -46,26 +81,24 @@ A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in 
 docker compose up -d --force-recreate librechat
 ```
 
-Open WebUI has no bots: it only lists the models of the three providers and connects the same tools.
-
 ## Deployment on the VPS
 
 API keys exist only in `.env` on the VPS. Never print secret values to the terminal or chat.
 
 ### 1. Directories and permissions
 
-The `librechat` and `mongodb` containers run as the `UID:GID` user from `.env` and write to the `./data/...` directories. Create the directories in advance as that same user:
+The `librechat`, `mongodb` and `playwright` containers run as the `UID:GID` user from `.env` and write to the `./data/...` directories (`playwright` to `./data/web`, which the `tools` container also mounts). Create the directories in advance as that same user:
 
 ```bash
 sudo mkdir -p /opt/parley && sudo chown "$USER": /opt/parley
 git clone <parley repository URL> /opt/parley
 cd /opt/parley
-mkdir -p data/mongo data/open-webui data/tools/desktop-commander \
+mkdir -p data/mongo data/tools/desktop-commander data/web \
   data/librechat/images data/librechat/uploads data/librechat/logs data/librechat/data
 id -u; id -g
 ```
 
-Put the values of `id -u` and `id -g` into `UID` and `GID` in `.env`.
+Put the values of `id -u` and `id -g` into `UID` and `GID` in `.env`. Both are required: compose refuses to start without them (no default), so a container never runs as an unintended user.
 
 ### 2. Deploy keys and the notes and handoff clones
 
@@ -102,6 +135,38 @@ Host github-handoff
   StrictHostKeyChecking yes
 ```
 
+Shell access to the VPS host (done before the key directory is handed to root below). The `tools` container reaches the host through the name `host.docker.internal` (`extra_hosts` in `docker-compose.yml`). **This gives the bots full shell access to the VPS host as the user `ubuntu` with passwordless sudo, i.e. root on the host. It is a deliberate choice of the owner; anyone who can talk to a bot with the `tools` server can use it.**
+
+Create a key pair `host`, allow its public key on the host and pin the host key, so that ssh does not ask anything and does not accept another host under this name. The host key is taken from the host's own public key file and written under the name the container uses (`ssh-keyscan` is not suitable: it would scan the name from the host, not from the container network):
+
+```bash
+ssh-keygen -t ed25519 -N '' -C parley-host -f /opt/parley-ssh/host
+cat /opt/parley-ssh/host.pub >> /home/ubuntu/.ssh/authorized_keys
+echo "host.docker.internal $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)" >> /opt/parley-ssh/known_hosts
+```
+
+On an existing installation the directory already belongs to root, so the same steps run with sudo (then add the `Host vps` entry below to the config with `sudo` as well and recreate the container: `docker compose up -d --force-recreate tools`):
+
+```bash
+sudo ssh-keygen -t ed25519 -N '' -C parley-host -f /opt/parley-ssh/host
+sudo cat /opt/parley-ssh/host.pub >> /home/ubuntu/.ssh/authorized_keys
+echo "host.docker.internal $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)" | sudo tee -a /opt/parley-ssh/known_hosts >/dev/null
+```
+
+The entry in `/opt/parley-ssh/config`:
+
+```text
+Host vps
+  HostName host.docker.internal
+  User ubuntu
+  IdentityFile /root/.ssh/host
+  IdentitiesOnly yes
+  UserKnownHostsFile /root/.ssh/known_hosts
+  StrictHostKeyChecking yes
+```
+
+If the connection from the container times out, the host firewall blocks port 22 from the Docker network; allow it there. Check after the start (section 4): `docker compose exec tools ssh vps true`.
+
 The clones are made from the host with the same keys, then the remote is switched to the aliases (inside the container ssh uses the config):
 
 ```bash
@@ -118,7 +183,7 @@ The container runs as root, and ssh refuses to read a config and keys owned by a
 
 ```bash
 sudo chown -R root:root /opt/parley-ssh
-sudo chmod 600 /opt/parley-ssh/notes /opt/parley-ssh/handoff /opt/parley-ssh/config
+sudo chmod 600 /opt/parley-ssh/notes /opt/parley-ssh/handoff /opt/parley-ssh/host /opt/parley-ssh/config
 ```
 
 The clones stay owned by the regular user: root inside the container can write to them, and git in the container is configured to accept a directory owned by someone else.
@@ -133,7 +198,7 @@ chmod 600 .env
 What to fill in:
 
 - `DOMAIN_CLIENT`, `DOMAIN_SERVER` — the public address of LibreChat.
-- `CREDS_KEY` (`openssl rand -hex 32`), `CREDS_IV` (`openssl rand -hex 16`), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `WEBUI_SECRET_KEY` (all `openssl rand -hex 32`) — generated on the VPS.
+- `CREDS_KEY` (`openssl rand -hex 32`), `CREDS_IV` (`openssl rand -hex 16`), `JWT_SECRET`, `JWT_REFRESH_SECRET` (all `openssl rand -hex 32`) — generated on the VPS.
 - `ALLOW_REGISTRATION` stays `false`; it is opened only for the first login (section 5).
 - `NOTES_DIR=/opt/parley-data/notes`, `HANDOFF_DIR=/opt/parley-data/handoff`, `TOOLS_SSH_DIR=/opt/parley-ssh`.
 - `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` — the signature of the bots' commits.
@@ -179,35 +244,37 @@ docker compose ps
 docker compose logs tools
 ```
 
-The `tools` container must reach the `healthy` state; the other services wait for it.
+The `tools` and `playwright` containers must reach the `healthy` state; `librechat` waits for both. The first start pulls the Playwright image (about 430 MB).
 
 ### 5. First login
 
 Any user registered in LibreChat gets bots with a terminal in the `tools` container, so registration is opened only while creating your own account, only through an ssh tunnel and before the Caddy route exists.
 
 1. Set `ALLOW_REGISTRATION=true` in `.env`, then run `docker compose up -d --force-recreate librechat`.
-2. From your computer open the tunnel `ssh -L 3080:127.0.0.1:3080 -L 8080:127.0.0.1:8080 <VPS>` and register in LibreChat at `http://localhost:3080`.
-3. In Open WebUI at `http://localhost:8080` create your account: the first account becomes the administrator and is created while signup is closed (`ENABLE_SIGNUP=false` is set in compose).
-4. Set `ALLOW_REGISTRATION=false` in `.env` again, then run `docker compose up -d --force-recreate librechat`.
-5. Only after that does the administrator add the Caddy route (section 7).
+2. From your computer open the tunnel `ssh -L 3080:127.0.0.1:3080 <VPS>` and register in LibreChat at `http://localhost:3080`.
+3. Set `ALLOW_REGISTRATION=false` in `.env` again, then run `docker compose up -d --force-recreate librechat`.
+4. Only after that does the administrator add the Caddy route (section 7).
 
 ### 6. MCP connection
 
-LibreChat connects `tools` through `librechat.yaml` (the `mcpServers` block) and the bots enable it through `mcpServers` in their model specs; no manual steps are needed. The address `tools:8000` is allowed in `mcpSettings.allowedAddresses`: without it LibreChat blocks requests to private addresses.
-
-Open WebUI registers the server at startup from the `TOOL_SERVER_CONNECTIONS` variable in `docker-compose.yml`. If the tools do not appear in a chat, add the server manually: Admin Panel, Settings, Integrations, External Tool Servers, Add Connection, Type: MCP (Streamable HTTP), URL `http://tools:8000/mcp`, Auth: None. Because `ENABLE_PERSISTENT_CONFIG=false`, settings made in the UI do not survive restarts; a permanent change goes into `docker-compose.yml`.
+LibreChat connects `tools` and `playwright` through `librechat.yaml` (the `mcpServers` block) and the bots enable them through `mcpServers` in their model specs; no manual steps are needed. The addresses `tools:8000` and `playwright:8931` are allowed in `mcpSettings.allowedAddresses`: without it LibreChat blocks requests to private addresses. The Playwright server itself also checks the `Host` header and accepts only `playwright:8931` (`--allowed-hosts`); if the service is renamed or the port changes, change both places and the flags.
 
 ### 7. Caddy route
 
-Done by the administrator in the selfhost-music Caddyfile: `reverse_proxy parley-librechat:3080` (LibreChat) and `reverse_proxy parley-webui:8080` (Open WebUI). The `CADDY_NETWORK` network must exist before `docker compose up` of parley; find its name with `docker network ls` on the VPS.
+Done by the administrator in the selfhost-music Caddyfile: `reverse_proxy parley-librechat:3080`. The `CADDY_NETWORK` network must exist before `docker compose up` of parley; find its name with `docker network ls` on the VPS.
 
 ## Updating and redeploying
 
 ```bash
 cd /opt/parley
 git pull
-docker compose up -d --build
+mkdir -p data/web
+docker compose up -d --build --remove-orphans
 ```
+
+`mkdir -p data/web` matters on an install that predates the `playwright` service: the directory must be created by the deploying user, otherwise Docker creates it as root and the browser, which runs as `UID:GID`, cannot write there. If Docker has already created it as root: `sudo chown "$(id -u):$(id -g)" data/web`.
+
+`--remove-orphans` stops and removes containers of services deleted from `docker-compose.yml`.
 
 `librechat.yaml` is bind-mounted as a single file: compose does not notice its changes, and `git pull` replaces the file (new inode), so the running container keeps the old version. After a change to `librechat.yaml` recreate LibreChat explicitly:
 
@@ -215,8 +282,10 @@ docker compose up -d --build
 docker compose up -d --force-recreate librechat
 ```
 
-Image versions are pinned in `docker-compose.yml` and `tools/Dockerfile`; changing them is a separate, deliberate change.
+Versions are pinned: LibreChat in `librechat/Dockerfile` (the `FROM` tag), MongoDB and the Playwright MCP image in `docker-compose.yml`, the npm packages in `tools/Dockerfile`; changing them is a separate, deliberate change. A LibreChat upgrade is a change of the `FROM` tag; the build fails if the PWA files patched by `librechat/patch-pwa.sh` changed, and then the script is adjusted to the new files.
+
+Logs of all containers are rotated by Docker (3 files of 10 MB each per container). The `tools` container does not log tool calls: supergateway runs with `--logLevel none`, otherwise it would write every JSON-RPC message, including the contents of the notes, into the log.
 
 ## Adding a model
 
-Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. Open WebUI fetches the model lists from the providers itself. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list.
+Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list. The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Argon`; otherwise the context window falls back to 1,024 tokens.

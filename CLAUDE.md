@@ -14,14 +14,15 @@ Documentation and comments are in English (the repository is public). Instructio
 
 ## Change rules
 
-- Image versions (`librechat`, `mongodb`, `open-webui`) and npm packages in `tools/Dockerfile` are pinned. Upgrades are deliberate: read the project changelog first, then change the version. Keep `mongodb` at the version used by the official LibreChat `docker-compose.yml` of the chosen tag.
+- Versions are pinned: LibreChat in the `FROM` tag of `librechat/Dockerfile` (the compose file builds `parley-librechat:local` from it), `mongodb` and the `playwright` image (`mcr.microsoft.com/playwright/mcp`) in `docker-compose.yml`, npm packages in `tools/Dockerfile`. Upgrades are deliberate: read the project changelog first, then change the version. A LibreChat upgrade is a change of the `FROM` tag; the build checks the patterns that `librechat/patch-pwa.sh` patches (PWA theme colour and the manifest revision in `sw.js`) and fails if they changed, then the script is adjusted. Keep `mongodb` at the version used by the official LibreChat `docker-compose.yml` of the chosen tag.
 - Take the `version` field of `librechat.yaml` from `librechat.example.yaml` at the tag of the LibreChat version in use. Validate `modelSpecs` fields against the schema at the same tag (`packages/data-provider/src/models.ts`, `schemas.ts`).
 - A model is added as an entry in `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then the container is recreated: `docker compose up -d --force-recreate librechat`.
+- The `playwright` service relies on `--snapshot-mode none` (action results carry no page snapshot) and on the `filename` parameter of `browser_snapshot` (the snapshot goes to a file in `/data/web`, shared with the `tools` container). Before upgrading the image, check that both still exist, and run the flags from `docker-compose.yml` in a throwaway container on the VPS: navigate results must stay a few lines long.
 - Bots are `modelSpecs` items in `librechat.yaml`. A bot's prompt and the shared bot rules live in the Obsidian vault (the `prompts` folder of the notes repository, mounted at `/data/notes` in the tools container) and are never copied into this repository: the short instruction in `promptPrefix` makes the bot read them at the start of each conversation. A new bot is a new `modelSpecs` item, then `docker compose up -d --force-recreate librechat`.
-- The DesktopCommander config is set by `tools/init-config.mjs` on every container start; do not edit the file by hand. File operations are limited to `/data`, the terminal is not.
+- The DesktopCommander config is set by `tools/init-config.mjs` on every container start; do not edit the file by hand. File operations are limited to `/data`, the terminal is not: it also has ssh access to the VPS host (`ssh vps`, user `ubuntu` with passwordless sudo), a deliberate choice of the owner (README, section 2).
 
 ## Deployment
 
-On the VPS: `git pull`, then `docker compose up -d --build`. Files on the VPS are not edited by hand, except `.env`. The Caddy route is configured by the administrator in selfhost-music: Caddy proxies to `parley-librechat:3080` and `parley-webui:8080` over the shared `CADDY_NETWORK` network.
+On the VPS: `git pull`, `mkdir -p data/web` (as the deploying user; if Docker already created it as root, `sudo chown "$(id -u):$(id -g)" data/web`), then `docker compose up -d --build --remove-orphans`. Files on the VPS are not edited by hand, except `.env`. The Caddy route is configured by the administrator in selfhost-music: Caddy proxies to `parley-librechat:3080` over the shared `CADDY_NETWORK` network.
 
 Further rules come from the root CLAUDE.md of the personal projects.
