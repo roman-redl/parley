@@ -1,0 +1,216 @@
+# parley
+
+A personal Poe-like service on a VPS: a chat interface with several models, voice input and bots that can reach files and a terminal. The repository holds only configs, no code.
+
+Two chat interfaces currently run on one VPS for comparison on a phone: LibreChat (the main candidate) and Open WebUI. Login is by password, without two-factor authentication.
+
+- Models over API: Anthropic, Gemini and OpenAI.
+- Speech-to-text: OpenAI (`gpt-transcribe`).
+- Bots are LibreChat model specs (`modelSpecs` in `librechat.yaml`). Their tools come from one shared MCP container: files and a terminal in the clones of two git repositories, the Obsidian vault `notes` and `handoff`. Commits and pushes use deploy keys.
+
+## Architecture
+
+| Service | Image | Port | Purpose |
+| --- | --- | --- | --- |
+| `librechat` | `registry.librechat.ai/librechat-ai/librechat:v0.8.8` | `parley-librechat:3080` on the Caddy network, `127.0.0.1:3080` | main chat interface, bots |
+| `mongodb` | `mongo:8.0.20` | internal | LibreChat database, no authentication and no ports exposed |
+| `open-webui` | `ghcr.io/open-webui/open-webui:v0.13.3` | `parley-webui:8080` on the Caddy network, `127.0.0.1:8080` | second chat interface for comparison |
+| `tools` | built from `./tools` | internal, `8000` (`/mcp`) | MCP server: DesktopCommander behind supergateway |
+
+Caddy runs in a container of the selfhost-music compose project and proxies to `parley-librechat:3080` and `parley-webui:8080` over the shared `CADDY_NETWORK` network (default `selfhost-music_default`). The ports on the host's `127.0.0.1` exist only for access through an ssh tunnel.
+
+The `tools` container:
+
+- file operations are limited to `/data` (`/data/notes`, `/data/handoff`);
+- the terminal is not limited to that directory: `git commit`, `git pull` and `git push` run through it;
+- the DesktopCommander config and logs live in `./data/tools/desktop-commander` and survive container recreation;
+- on every start DesktopCommander telemetry is switched off and `allowedDirectories` is set to `/data`.
+
+## Bots
+
+A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. At the start of a conversation the instruction makes the bot run `git pull --rebase` in the vault clone, then read two files from the vault: the shared bot rules and the file of its own role (a `text` block in each). Those texts become the bot's system prompt for the rest of the conversation. Editing a prompt in Obsidian therefore takes effect without a redeploy: it is enough for the change to reach the vault clone on the VPS.
+
+Bots of the first stage:
+
+| Bot | Provider | Model |
+| --- | --- | --- |
+| `Erudite-assistant` | Anthropic | `claude-opus-5-5` |
+| `English-friend` | OpenAI | `gpt-6-luna` |
+| `Brilliant-Sage` | Google | `gemini-3.8-flash` |
+
+`enforce` is `false` and `interface.modelSelect` is `true`: models outside the specs stay selectable. LibreChat 0.8.8 talks to `gpt-6-luna` through the Responses API, so its tool calls work with any reasoning effort.
+
+A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in the vault), then:
+
+```bash
+docker compose up -d --force-recreate librechat
+```
+
+Open WebUI has no bots: it only lists the models of the three providers and connects the same tools.
+
+## Deployment on the VPS
+
+API keys exist only in `.env` on the VPS. Never print secret values to the terminal or chat.
+
+### 1. Directories and permissions
+
+The `librechat` and `mongodb` containers run as the `UID:GID` user from `.env` and write to the `./data/...` directories. Create the directories in advance as that same user:
+
+```bash
+sudo mkdir -p /opt/parley && sudo chown "$USER": /opt/parley
+git clone <parley repository URL> /opt/parley
+cd /opt/parley
+mkdir -p data/mongo data/open-webui data/tools/desktop-commander \
+  data/librechat/images data/librechat/uploads data/librechat/logs data/librechat/data
+id -u; id -g
+```
+
+Put the values of `id -u` and `id -g` into `UID` and `GID` in `.env`.
+
+### 2. Deploy keys and the notes and handoff clones
+
+Each repository gets its own key with write access. The key directory lives outside the parley repository (`TOOLS_SSH_DIR`):
+
+```bash
+sudo mkdir -p /opt/parley-ssh /opt/parley-data
+sudo chown "$USER": /opt/parley-ssh /opt/parley-data
+chmod 700 /opt/parley-ssh
+ssh-keygen -t ed25519 -N '' -C parley-notes -f /opt/parley-ssh/notes
+ssh-keygen -t ed25519 -N '' -C parley-handoff -f /opt/parley-ssh/handoff
+ssh-keyscan github.com > /opt/parley-ssh/known_hosts
+```
+
+Add the public keys (`notes.pub`, `handoff.pub`) on GitHub: repository, Settings, Deploy keys, Add deploy key, enable Allow write access.
+
+The file `/opt/parley-ssh/config` with aliases; the paths are inside the container:
+
+```text
+Host github-notes
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/notes
+  IdentitiesOnly yes
+  UserKnownHostsFile /root/.ssh/known_hosts
+  StrictHostKeyChecking yes
+
+Host github-handoff
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/handoff
+  IdentitiesOnly yes
+  UserKnownHostsFile /root/.ssh/known_hosts
+  StrictHostKeyChecking yes
+```
+
+The clones are made from the host with the same keys, then the remote is switched to the aliases (inside the container ssh uses the config):
+
+```bash
+GIT_SSH_COMMAND='ssh -i /opt/parley-ssh/notes -o IdentitiesOnly=yes -o UserKnownHostsFile=/opt/parley-ssh/known_hosts' \
+  git clone git@github.com:roman-redl/notes.git /opt/parley-data/notes
+git -C /opt/parley-data/notes remote set-url origin git@github-notes:roman-redl/notes.git
+
+GIT_SSH_COMMAND='ssh -i /opt/parley-ssh/handoff -o IdentitiesOnly=yes -o UserKnownHostsFile=/opt/parley-ssh/known_hosts' \
+  git clone git@github.com:roman-redl/handoff.git /opt/parley-data/handoff
+git -C /opt/parley-data/handoff remote set-url origin git@github-handoff:roman-redl/handoff.git
+```
+
+The container runs as root, and ssh refuses to read a config and keys owned by another user. So the key directory is handed to root:
+
+```bash
+sudo chown -R root:root /opt/parley-ssh
+sudo chmod 600 /opt/parley-ssh/notes /opt/parley-ssh/handoff /opt/parley-ssh/config
+```
+
+The clones stay owned by the regular user: root inside the container can write to them, and git in the container is configured to accept a directory owned by someone else.
+
+### 3. The .env file
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+What to fill in:
+
+- `DOMAIN_CLIENT`, `DOMAIN_SERVER` — the public address of LibreChat.
+- `CREDS_KEY` (`openssl rand -hex 32`), `CREDS_IV` (`openssl rand -hex 16`), `JWT_SECRET`, `JWT_REFRESH_SECRET`, `WEBUI_SECRET_KEY` (all `openssl rand -hex 32`) — generated on the VPS.
+- `ALLOW_REGISTRATION` stays `false`; it is opened only for the first login (section 5).
+- `NOTES_DIR=/opt/parley-data/notes`, `HANDOFF_DIR=/opt/parley-data/handoff`, `TOOLS_SSH_DIR=/opt/parley-ssh`.
+- `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` — the signature of the bots' commits.
+- `UID`, `GID` — from step 1.
+- `ENDPOINTS`, `ANTHROPIC_MODELS`, `GOOGLE_MODELS`, `OPENAI_MODELS` — already set in the template.
+
+The provider keys are already on the VPS and are moved into `.env` without printing them. The Gemini key lies in `~/.config/parley/secrets.env` (a `GOOGLE_KEY=...` line); remove the empty `GOOGLE_KEY=` line from `.env`, append the real one and delete the temporary file:
+
+```bash
+grep -q '^GOOGLE_KEY=.' ~/.config/parley/secrets.env \
+  && sed -i '/^GOOGLE_KEY=/d' .env \
+  && grep '^GOOGLE_KEY=.' ~/.config/parley/secrets.env >> .env \
+  && grep -q '^GOOGLE_KEY=.' .env \
+  && rm ~/.config/parley/secrets.env \
+  && echo "GOOGLE_KEY moved"
+```
+
+The temporary file is deleted only after the key is in `.env`; if the command prints nothing, check the file format (`GOOGLE_KEY=...` without `export`).
+
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are taken the same way from the `.env` of erudit-bot on the same VPS:
+
+```bash
+SRC=<erudit-bot dir>/.env
+[ "$(grep -cE '^(ANTHROPIC_API_KEY|OPENAI_API_KEY)=.' "$SRC")" = 2 ] \
+  && sed -i '/^ANTHROPIC_API_KEY=/d;/^OPENAI_API_KEY=/d' .env \
+  && grep -E '^(ANTHROPIC_API_KEY|OPENAI_API_KEY)=.' "$SRC" >> .env \
+  && echo "keys moved"
+```
+
+Both commands replace the existing lines, so running them again does not create duplicates. Check without printing the values — each line must output `1`:
+
+```bash
+for k in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_KEY; do echo "$k $(grep -c "^$k=." .env)"; done
+```
+
+The same `OPENAI_API_KEY` serves OpenAI chat and speech-to-text.
+
+### 4. Start
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs tools
+```
+
+The `tools` container must reach the `healthy` state; the other services wait for it.
+
+### 5. First login
+
+Any user registered in LibreChat gets bots with a terminal in the `tools` container, so registration is opened only while creating your own account, only through an ssh tunnel and before the Caddy route exists.
+
+1. Set `ALLOW_REGISTRATION=true` in `.env`, then run `docker compose up -d --force-recreate librechat`.
+2. From your computer open the tunnel `ssh -L 3080:127.0.0.1:3080 -L 8080:127.0.0.1:8080 <VPS>` and register in LibreChat at `http://localhost:3080`.
+3. In Open WebUI at `http://localhost:8080` create your account: the first account becomes the administrator and is created while signup is closed (`ENABLE_SIGNUP=false` is set in compose).
+4. Set `ALLOW_REGISTRATION=false` in `.env` again, then run `docker compose up -d --force-recreate librechat`.
+5. Only after that does the administrator add the Caddy route (section 7).
+
+### 6. MCP connection
+
+LibreChat connects `tools` through `librechat.yaml` (the `mcpServers` block) and the bots enable it through `mcpServers` in their model specs; no manual steps are needed. The address `tools:8000` is allowed in `mcpSettings.allowedAddresses`: without it LibreChat blocks requests to private addresses.
+
+Open WebUI registers the server at startup from the `TOOL_SERVER_CONNECTIONS` variable in `docker-compose.yml`. If the tools do not appear in a chat, add the server manually: Admin Panel, Settings, Integrations, External Tool Servers, Add Connection, Type: MCP (Streamable HTTP), URL `http://tools:8000/mcp`, Auth: None. Because `ENABLE_PERSISTENT_CONFIG=false`, settings made in the UI do not survive restarts; a permanent change goes into `docker-compose.yml`.
+
+### 7. Caddy route
+
+Done by the administrator in the selfhost-music Caddyfile: `reverse_proxy parley-librechat:3080` (LibreChat) and `reverse_proxy parley-webui:8080` (Open WebUI). The `CADDY_NETWORK` network must exist before `docker compose up` of parley; find its name with `docker network ls` on the VPS.
+
+## Updating and redeploying
+
+```bash
+cd /opt/parley
+git pull
+docker compose up -d --build
+```
+
+Image versions are pinned in `docker-compose.yml` and `tools/Dockerfile`; changing them is a separate, deliberate change.
+
+## Adding a model
+
+Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. Open WebUI fetches the model lists from the providers itself. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list.
