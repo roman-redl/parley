@@ -125,26 +125,28 @@ modelSpecs:
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
-    # The same role file as Erudite-assistant-Opus, on Gemini 4 Argon and Hydrogen. Notes:
+    # The same role file as Erudite-assistant-Opus, on Gemini 4 Carbon and Hydrogen. Notes:
     # LibreChat v0.8.8 has no price or context window data for these models (LibreChat issue
     # #17074), and the sources of the native search (Google Search grounding) are not shown in
     # the UI (issue #16665).
 
-    - name: Erudite-assistant-Argon
-      label: Erudite-assistant-Argon
-      description: Personal analyst with the full context of the vault (Gemini 4 Argon, high thinking level, web search)
+    - name: Erudite-assistant-Carbon
+      label: Erudite-assistant-Carbon
+      description: Personal analyst with the full context of the vault (Gemini 4 Carbon, high thinking level, web search)
       mcpServers:
         - tools
         - playwright
       preset:
         endpoint: google
-        model: gemini-4-argon
-        modelLabel: Erudite-assistant-Argon
+        model: gemini-4-carbon
+        modelLabel: Erudite-assistant-Carbon
         thinking: true
         thinkingLevel: high
         # Required: without data for the model LibreChat falls back to the generic "gemini"
         # window (30,720) minus the 65,535 output tokens, i.e. a 1,024-token context.
         maxContextTokens: 1000000
+        # The model's output limit (32,768); LibreChat has no data for the model.
+        maxOutputTokens: 32768
         # Google Search grounding. Do not enable LibreChat's own webSearch: it would remove the native tool.
         web_search: true
         promptPrefix: |
@@ -162,7 +164,7 @@ modelSpecs:
         modelLabel: Erudite-assistant-Hydrogen
         thinking: true
         thinkingLevel: high
-        # Required, as for Argon.
+        # Required, as for Carbon.
         maxContextTokens: 1000000
         # Google Search grounding.
         web_search: true

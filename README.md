@@ -54,7 +54,7 @@ Bots:
 | Bot | Provider | Model |
 | --- | --- | --- |
 | `Erudite-assistant-Opus` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
-| `Erudite-assistant-Argon` | Google | `gemini-4-argon`, thinking level `high`, native web search (Google Search grounding) |
+| `Erudite-assistant-Carbon` | Google | `gemini-4-carbon`, thinking level `high`, native web search (Google Search grounding) |
 | `Erudite-assistant-Hydrogen` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
 | `Doctor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `BackEnder` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
@@ -68,7 +68,7 @@ Bots:
 
 Each bot reads the role file with its own name from the `prompts` folder of the vault (`Doctor.md`, `BackEnder.md`, ...; the Erudite variants share `Erudite-assistant.md`).
 
-All Erudite-assistant variants read the same role file. Web search is the provider's native tool (`web_search: true` in the preset), not LibreChat's own web search, which would replace it and is not configured. `interface.webSearch` is nevertheless `true`: it grants the roles the web search permission, and without it LibreChat silently strips the native tool too. The web search button in the chat starts LibreChat's own search; leave it off. LibreChat 0.8.8 has no price or context window data for `gemini-4-argon` and `gemini-4-hydrogen`: the preset sets `maxContextTokens` explicitly (otherwise the window becomes 1,024 tokens), and spending on it is not counted. The sources of the native search are not shown in the UI.
+All Erudite-assistant variants read the same role file. Web search is the provider's native tool (`web_search: true` in the preset), not LibreChat's own web search, which would replace it and is not configured. `interface.webSearch` is nevertheless `true`: it grants the roles the web search permission, and without it LibreChat silently strips the native tool too. The web search button in the chat starts LibreChat's own search; leave it off. LibreChat 0.8.8 has no price or context window data for `gemini-4-carbon` and `gemini-4-hydrogen`: the preset sets `maxContextTokens` explicitly (otherwise the window becomes 1,024 tokens), and spending on them is counted at the generic "gemini" rate, cached input tokens included at the full input price. The sources of the native search are not shown in the UI.
 
 All bots also get the `playwright` MCP server (`mcpServers` of each spec). The rules for reading the web (search first, then Jina Reader, the browser when Jina fails or the page needs interaction, PDFs through `curl` and `pdftotext`) live in the shared bot rules in the vault, not here.
 
@@ -289,4 +289,4 @@ Logs of all containers are rotated by Docker (3 files of 10 MB each per containe
 
 ## Adding a model
 
-Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list. The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Argon`; otherwise the context window falls back to 1,024 tokens.
+Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list. The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-carbon` and `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Carbon`; otherwise the context window falls back to 1,024 tokens.
