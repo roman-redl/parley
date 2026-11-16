@@ -219,23 +219,26 @@ grep -q '^GOOGLE_KEY=.' ~/.config/parley/secrets.env \
 
 The temporary file is deleted only after the key is in `.env`; if the command prints nothing, check the file format (`GOOGLE_KEY=...` without `export`).
 
-`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are taken the same way from the `.env` of erudit-bot on the same VPS:
+`ANTHROPIC_API_KEY` is taken the same way from the `.env` of erudit-bot on the same VPS, and its `OPENAI_API_KEY` (an OpenAI project without data sharing, used only for speech-to-text) becomes `OPENAI_STT_API_KEY` here:
 
 ```bash
 SRC=<erudit-bot dir>/.env
 [ "$(grep -cE '^(ANTHROPIC_API_KEY|OPENAI_API_KEY)=.' "$SRC")" = 2 ] \
-  && sed -i '/^ANTHROPIC_API_KEY=/d;/^OPENAI_API_KEY=/d' .env \
-  && grep -E '^(ANTHROPIC_API_KEY|OPENAI_API_KEY)=.' "$SRC" >> .env \
+  && sed -i '/^ANTHROPIC_API_KEY=/d;/^OPENAI_STT_API_KEY=/d' .env \
+  && grep -E '^ANTHROPIC_API_KEY=.' "$SRC" >> .env \
+  && grep -E '^OPENAI_API_KEY=.' "$SRC" | sed 's/^OPENAI_API_KEY=/OPENAI_STT_API_KEY=/' >> .env \
   && echo "keys moved"
 ```
+
+`OPENAI_API_KEY` is the key of a separate OpenAI project with data sharing turned on (it gets free daily tokens), used only for the OpenAI chat bots; it is written into `.env` by hand.
 
 Both commands replace the existing lines, so running them again does not create duplicates. Check without printing the values — each line must output `1`:
 
 ```bash
-for k in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_KEY; do echo "$k $(grep -c "^$k=." .env)"; done
+for k in ANTHROPIC_API_KEY OPENAI_API_KEY OPENAI_STT_API_KEY GOOGLE_KEY; do echo "$k $(grep -c "^$k=." .env)"; done
 ```
 
-The same `OPENAI_API_KEY` serves OpenAI chat and speech-to-text.
+Speech-to-text and the chat use different keys: data sharing must not cover voice recordings.
 
 ### 4. Start
 

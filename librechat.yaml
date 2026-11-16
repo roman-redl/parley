@@ -47,11 +47,11 @@ mcpSettings:
     - "tools:8000"
     - "playwright:8931"
 
-# Speech-to-text: OpenAI. The key comes from .env.
+# Speech-to-text: OpenAI, with its own key from .env (a project without data sharing).
 speech:
   stt:
     openai:
-      apiKey: "${OPENAI_API_KEY}"
+      apiKey: "${OPENAI_STT_API_KEY}"
       model: "gpt-transcribe"
   speechTab:
     speechToText:
