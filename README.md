@@ -28,6 +28,7 @@ The `tools` container:
 - the terminal can also open an ssh session to the VPS host (`ssh vps`, the user `ubuntu` with passwordless sudo): the bots have full shell access to the host (section 2); this is a deliberate choice of the owner;
 - the DesktopCommander config and logs live in `./data/tools/desktop-commander` and survive container recreation;
 - on every start DesktopCommander telemetry is switched off and `allowedDirectories` is set to `/data`;
+- supergateway exposes only the file, search and terminal tools of DesktopCommander (`--tools` in `tools/entrypoint.sh`): every model request carries the tool descriptions, so unused tools cost tokens; `set_config_value` is not exposed either (the terminal can still edit the config file);
 - `curl` and `pdftotext` (poppler-utils) are installed next to `ripgrep`: web pages and PDFs are downloaded into files and searched there;
 
 The `playwright` container is the official Playwright MCP image (linux/arm64 included) with headless Chromium; the server speaks streamable HTTP on port 8931 and is reached by the bots only through LibreChat. The flags are in `docker-compose.yml`, each with a comment. How a page is read:
