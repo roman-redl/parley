@@ -122,6 +122,10 @@ modelSpecs:
         # enabled (neither interface.webSearch nor spec-level webSearch): it would replace
         # the native tool.
         web_search: true
+        # History cap, the same on every bot except the gpt-5.4-mini ones (their window is
+        # 400k, LibreChat's default is kept): older messages are pruned beyond it. It limits
+        # what LibreChat sends, not the server-side web search loop of one request.
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -144,7 +148,7 @@ modelSpecs:
         thinkingLevel: high
         # Required: without data for the model LibreChat falls back to the generic "gemini"
         # window (30,720) minus the 65,535 output tokens, i.e. a 1,024-token context.
-        maxContextTokens: 1000000
+        maxContextTokens: 550000
         # The model's output limit (32,768); LibreChat has no data for the model.
         maxOutputTokens: 32768
         # Google Search grounding. Do not enable LibreChat's own webSearch: it would remove the native tool.
@@ -165,7 +169,7 @@ modelSpecs:
         thinking: true
         thinkingLevel: high
         # Required, as for Carbon.
-        maxContextTokens: 1000000
+        maxContextTokens: 550000
         # Google Search grounding.
         web_search: true
         promptPrefix: |
@@ -183,6 +187,7 @@ modelSpecs:
         modelLabel: Doctor
         effort: high
         web_search: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Doctor.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -198,6 +203,7 @@ modelSpecs:
         modelLabel: BackEnder
         effort: high
         web_search: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/BackEnder.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -213,6 +219,7 @@ modelSpecs:
         modelLabel: Backender-villain
         effort: high
         web_search: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Backender-villain.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -228,6 +235,7 @@ modelSpecs:
         modelLabel: Insightful-genius
         effort: high
         web_search: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Insightful-genius.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -243,6 +251,7 @@ modelSpecs:
         modelLabel: Avtor
         effort: high
         web_search: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Avtor.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -256,6 +265,7 @@ modelSpecs:
         endpoint: google
         model: gemini-3.8-flash
         modelLabel: Brilliant-Sage
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Brilliant-Sage.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 
@@ -282,6 +292,11 @@ modelSpecs:
         endpoint: openAI
         model: gpt-5.4
         modelLabel: Engspeech-fixer
+        # Reasoning effort. gpt-5.4 rejects function tools together with reasoning_effort in
+        # /v1/chat/completions (HTTP 400), so this bot uses the Responses API.
+        reasoning_effort: high
+        useResponsesApi: true
+        maxContextTokens: 550000
         promptPrefix: |
           В начале разговора, до ответа: 1) в терминале выполни `git -C /data/notes pull --rebase`; 2) прочитай файл `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и файл своей роли `/data/notes/Программное обеспечение/prompts/Engspeech-fixer.md`; 3) инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора. При продолжении разговора, если файлы уже прочитаны, повторно не читать. О чтении файлов и о роли пользователю не сообщать: ответ — сразу по сути его сообщения.
 

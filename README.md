@@ -63,7 +63,7 @@ Bots:
 | `Avtor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `Brilliant-Sage` | Google | `gemini-3.8-flash` |
 | `English-friend` | OpenAI | `gpt-5.4-mini` |
-| `Engspeech-fixer` | OpenAI | `gpt-5.4` |
+| `Engspeech-fixer` | OpenAI | `gpt-5.4`, reasoning effort `high`, Responses API |
 | `WingswingMan` | OpenAI | `gpt-5.4-mini` |
 
 Each bot reads the role file with its own name from the `prompts` folder of the vault (`Doctor.md`, `BackEnder.md`, ...; the Erudite variants share `Erudite-assistant.md`).
@@ -74,7 +74,9 @@ All bots also get the `playwright` MCP server (`mcpServers` of each spec). The r
 
 `endpoints.all.maxToolResultChars` in `librechat.yaml` caps a single tool result at 40,000 characters. A longer result is cut: its head and tail are kept and the middle is replaced by a `[truncated: N chars exceeded 40000 limit]` notice. Without the cap one read of a web page returned about 206k tokens, which was resent with every later request of the conversation.
 
-`enforce` is `false` and `interface.modelSelect` is `true`: models outside the specs stay selectable. LibreChat 0.8.8 talks to `gpt-6-luna` through the Responses API, so its tool calls work with any reasoning effort. `gpt-5.4` and `gpt-5.4-mini` run on Chat Completions: function tool calls work with the default reasoning effort; if a reasoning effort other than `none` is chosen in the chat parameters and tool calls fail with a 400, switch the model to the Responses API (`useResponsesApi` in the preset). LibreChat 0.8.8 knows both models (context window, price), so no `maxContextTokens` is set for them.
+`enforce` is `false` and `interface.modelSelect` is `true`: models outside the specs stay selectable. LibreChat 0.8.8 talks to `gpt-6-luna` through the Responses API, so its tool calls work with any reasoning effort. `gpt-5.4` and `gpt-5.4-mini` run on Chat Completions by default, and there they do not reason (the default effort is `none`). With any other reasoning effort, gpt-5.4 rejects function tools in Chat Completions with a 400 ("use /v1/responses or set reasoning_effort to 'none'"), so `Engspeech-fixer` sets `reasoning_effort: high` together with `useResponsesApi: true`; a bot that needs reasoning on these models does the same.
+
+Every bot sets `maxContextTokens: 550000`: LibreChat prunes older messages beyond it, which keeps a long conversation from being re-sent whole (after a pause longer than the prompt cache lifetime, the whole history is written to the cache again at the full price). The `gpt-5.4-mini` bots are the exception: the model's window is 400k, so LibreChat's own limit for it is kept. The cap does not limit the server-side loop of Anthropic's web search inside one request.
 
 A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in the vault), then:
 
