@@ -48,7 +48,7 @@ Browser state lives only as long as one MCP session. `--isolated` keeps the prof
 
 ## Bots
 
-A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. At the start of a conversation the instruction makes the bot run `git pull --rebase` in the vault clone, then read two files from the vault: the shared bot rules and the file of its own role (a `text` block in each). Those texts become the bot's system prompt for the rest of the conversation. Editing a prompt in Obsidian therefore takes effect without a redeploy: it is enough for the change to reach the vault clone on the VPS.
+A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. The instruction makes the bot read two files from the vault whenever their full text is missing from the conversation: the shared bot rules and the file of its own role (a `text` block in each). That happens at the start, and again after LibreChat has trimmed or summarized old tool results of a long conversation. Those texts become the bot's system prompt. Editing a prompt in Obsidian therefore takes effect without a redeploy: the `tools` container pulls the vault clone every minute, and the next conversation reads the new text.
 
 Bots:
 
