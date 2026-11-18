@@ -104,9 +104,26 @@ modelSpecs:
     - anthropic
     - google
     - openAI
-  # false: a new chat keeps the last selection instead of opening the first bot (Opus) every time.
+  # false: a new chat keeps the last selection instead of opening the first bot every time.
   prioritize: false
   list:
+    # The basic bot, first in the menu: minimal personal context, short answers.
+    - name: Quick
+      label: Quick
+      description: "General assistant for any question: minimal personal context, vault search"
+      mcpServers:
+        - tools
+        - playwright
+      preset:
+        endpoint: anthropic
+        model: claude-opus-5-5
+        modelLabel: Quick
+        effort: medium
+        web_search: true
+        maxContextTokens: 550000
+        promptPrefix: |
+          Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Quick.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
+
     - name: Erudite-assistant-Opus
       label: Erudite-assistant-Opus
       description: Personal analyst with the full context of the vault
