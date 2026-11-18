@@ -26,6 +26,7 @@ The `tools` container:
 - file operations are limited to `/data` (`/data/notes`, `/data/handoff`);
 - the terminal is not limited to that directory: `git commit`, `git pull` and `git push` run through it;
 - the terminal can also open an ssh session to the VPS host (`ssh vps`, the user `ubuntu` with passwordless sudo): the bots have full shell access to the host (section 2); this is a deliberate choice of the owner;
+- every minute the container runs `git pull --ff-only` in the notes clone (`tools/entrypoint.sh`), so the bots see edits from Obsidian made during a conversation; the pull never commits or pushes and is skipped when the bot has local commits or an uncommitted edit of an incoming file, which the bot resolves with its own `git pull --rebase` (before its first edit and when a push is rejected); a stale `index.lock` left by a killed container is removed on start;
 - the DesktopCommander config and logs live in `./data/tools/desktop-commander` and survive container recreation;
 - on every start DesktopCommander telemetry is switched off and `allowedDirectories` is set to `/data`;
 - supergateway exposes only the file, search and terminal tools of DesktopCommander (`--tools` in `tools/entrypoint.sh`): every model request carries the tool descriptions, so unused tools cost tokens; `set_config_value` is not exposed either (the terminal can still edit the config file);

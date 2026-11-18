@@ -11,6 +11,10 @@ git config --global safe.directory '*'
 [ -n "${GIT_AUTHOR_NAME:-}" ] && git config --global user.name "$GIT_AUTHOR_NAME"
 [ -n "${GIT_AUTHOR_EMAIL:-}" ] && git config --global user.email "$GIT_AUTHOR_EMAIL"
 
+# git rebase --continue and merge commits open an editor; the image has none and the bot's
+# terminal has no TTY, so the prepared message is accepted as is.
+git config --global core.editor true
+
 # compose passes unset variables as empty strings, and an empty GIT_* variable
 # overrides user.name/user.email and makes commits fail.
 for v in GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; do
@@ -19,6 +23,28 @@ done
 
 DC_DIST="$(npm root -g)/@wonderwhy-er/desktop-commander/dist"
 node /opt/parley/init-config.mjs "$DC_DIST"
+
+# Keeps the notes clone current: edits from Obsidian on the phone and the computer reach
+# GitHub every few minutes, and the bots search the vault at any point of a conversation.
+# Fast-forward only: the loop never commits, merges or pushes. When the bot has local
+# commits or an uncommitted edit of an incoming file, the pull fails and nothing changes;
+# the bot resolves that with its own git pull --rebase (before its first edit and when a
+# push is rejected). A pull is skipped while another git command holds the index lock.
+# No git process runs in the container yet, so a lock left by a killed container is stale.
+if [ -e /data/notes/.git/index.lock ]; then
+  rm -f /data/notes/.git/index.lock
+  echo "notes sync: removed a stale index.lock" >&2
+fi
+(
+  while :; do
+    if [ -e /data/notes/.git/index.lock ]; then
+      echo "notes sync: skipped, index.lock is held" >&2
+    elif ! out="$(timeout 120 git -C /data/notes pull --ff-only -q 2>&1)"; then
+      echo "notes sync: skipped: $(printf '%s\n' "$out" | tail -n 1)" >&2
+    fi
+    sleep 60
+  done
+) &
 
 # --stateful mode: DesktopCommander terminal sessions (start_process,
 # read_process_output) live in a child process; without it every request would
