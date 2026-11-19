@@ -127,13 +127,19 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
-      # The subagent tool: the bot can run a copy of itself (same prompt and tools, no
-      # conversation history, cannot start subagents of its own) and gets back only the
-      # final text, so search results stay out of the conversation. When to use it is set
-      # by the shared bot rules in the vault. Not on the English bots: they do not search.
+      # The subagent tool: the bot hands a task to one of two saved agents and gets back only
+      # their final text, so search results and file contents stay out of the conversation. Both
+      # are created by agents/apply.js from agents/*.json and agents/*.md and run on Sonnet
+      # (effort medium, prompt cache 5 minutes; the bots keep the 1 hour cache) without the
+      # conversation history. Researcher: search and reading, 11 tools, a small start.
+      # General: any other work (edits, commands, data processing), almost all tools of tools
+      # and playwright. Neither can start subagents (allowSelf: false, so a copy of the bot is
+      # not offered). When to use which is set by the shared bot rules in the vault. Not on the
+      # English bots: they do not search.
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -152,7 +158,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -186,7 +193,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: google
         model: gemini-4-carbon
@@ -211,7 +219,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: google
         model: gemini-4-hydrogen
@@ -233,7 +242,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -252,7 +262,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -271,7 +282,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -290,7 +302,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -309,7 +322,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -328,7 +342,8 @@ modelSpecs:
         - playwright
       subagents:
         enabled: true
-        allowSelf: true
+        allowSelf: false
+        agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: google
         model: gemini-3.8-flash

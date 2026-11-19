@@ -36,6 +36,9 @@ services:
         aliases: [parley-librechat]
     volumes:
       - ./librechat.yaml:/app/librechat.yaml:ro
+      # Definitions of the saved agents (Researcher, General) and their apply script, run after a deploy:
+      # docker compose exec -T librechat node /app/parley-agents/apply.js (README, "The saved agents").
+      - ./agents:/app/parley-agents:ro
       - ./data/librechat/images:/app/client/public/images
       - ./data/librechat/uploads:/app/uploads
       - ./data/librechat/logs:/app/logs

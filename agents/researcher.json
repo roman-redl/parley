@@ -1,0 +1,30 @@
+{
+  "id": "agent_researcher",
+  "name": "Researcher",
+  "description": "Search and reading on the web and in the vault files; returns a concise summary with figures and sources. Search and reading only, no edits.",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5-5",
+  "model_parameters": {
+    "model": "claude-sonnet-5-5",
+    "effort": "medium",
+    "web_search": true,
+    "promptCache": true,
+    "promptCacheTtl": "5m"
+  },
+  "tools": [
+    "start_process_mcp_tools",
+    "read_process_output_mcp_tools",
+    "read_file_mcp_tools",
+    "browser_navigate_mcp_playwright",
+    "browser_snapshot_mcp_playwright",
+    "browser_take_screenshot_mcp_playwright",
+    "browser_click_mcp_playwright",
+    "browser_find_mcp_playwright",
+    "browser_type_mcp_playwright",
+    "browser_press_key_mcp_playwright",
+    "browser_wait_for_mcp_playwright"
+  ],
+  "mcpServerNames": ["tools", "playwright"],
+  "recursion_limit": 75,
+  "category": "general"
+}

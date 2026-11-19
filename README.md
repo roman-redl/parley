@@ -50,7 +50,7 @@ Browser state lives only as long as one MCP session. `--isolated` keeps the prof
 
 A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. The instruction makes the bot read two files from the vault whenever their full text is missing from the conversation: the shared bot rules and the file of its own role (a `text` block in each). That happens at the start, and again after LibreChat has trimmed or summarized old tool results of a long conversation. Those texts become the bot's system prompt. Editing a prompt in Obsidian therefore takes effect without a redeploy: the `tools` container pulls the vault clone every minute, and the next conversation reads the new text.
 
-Every bot except the three English ones has `subagents` enabled (`allowSelf`): the model gets a `subagent` tool that runs a copy of the bot with the same prompt and tools but without the conversation history, and only the final text of the copy returns to the conversation. Search results and pages read by the copy therefore do not stay in the conversation and are not resent with every later request. The copy cannot start subagents itself. When a bot uses it is set by the shared bot rules in the vault (section ПОДАГЕНТЫ).
+Every bot except the three English ones has `subagents` enabled with `agent_ids: [agent_researcher, agent_general]` and `allowSelf: false`: the model gets a `subagent` tool with two types, the saved agents Researcher and General (section "The saved agents"). A subagent runs without the conversation history, and only its final text returns to the conversation. Search results, pages and file contents it reads therefore do not stay in the conversation and are not resent with every later request. A subagent cannot start subagents itself. When a bot uses which type is set by the shared bot rules in the vault (section ПОДАГЕНТЫ).
 
 Bots:
 
@@ -87,6 +87,35 @@ A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in 
 ```bash
 docker compose up -d --force-recreate librechat
 ```
+
+## The saved agents
+
+Two saved LibreChat agents are the only subagent types of the bots: `agent_researcher` (Researcher) and `agent_general` (General). Their definitions live in this repository and a script writes them into the LibreChat database, so they are reviewed and versioned like the rest of the config. Both run on Sonnet (`claude-sonnet-5-5`), effort `medium`, with the provider's native web search, a prompt cache of 5 minutes (the bots use the default 1 hour cache) and `recursion_limit` 75.
+
+| Agent | For | Tools |
+| --- | --- | --- |
+| Researcher | search and reading on the web and in the vault files; returns a short summary with figures and sources | 11: `start_process`, `read_process_output`, `read_file` from `tools`; `browser_navigate`, `browser_snapshot`, `browser_take_screenshot`, `browser_click`, `browser_find`, `browser_type`, `browser_press_key`, `browser_wait_for` from `playwright` |
+| General | any other delegated work: edits across many vault notes, commands and diagnostics on the VPS host, data processing in the terminal | 34: all 15 tools of `tools` and 19 of the 25 tools of `playwright` |
+
+The files in `agents/`:
+
+- `<name>.json` is the settings. A tool is written `<tool>_mcp_<server>`. The description is what the calling bot's model sees when it picks the subagent type.
+- `<name>.md` is the system prompt: the text of the first fenced block tagged `text`. It is stored here and not in the vault, unlike the bot prompts, because only LibreChat reads it; no bot opens these files. General reads the shared bot rules from the vault itself when it edits notes, runs commands on the VPS or searches the web.
+- `apply.js` creates or updates every agent that has both a `.json` and a `.md` with the same base name.
+
+The Researcher is a small, cheap start: a short prompt and few tools. "Search and reading only" is a rule of its prompt, not a technical limit: `start_process` opens a terminal that could also write. General gets every tool of `tools`; of `playwright` it does not get `browser_evaluate`, `browser_run_code_unsafe`, `browser_drag`, `browser_drop`, `browser_resize` and `browser_emulate_media`. The two script tools are left out because the bot rules forbid page-scraping scripts (the page is read through snapshot files and the terminal), and the other four are not used for reading or editing; every tool description is sent with each request, so unused tools only cost tokens. A tool added to a server later is not picked up by itself: add it to the `.json`.
+
+Subagents never commit or push. General edits files without committing and lists the changed files; the calling bot reviews `git diff` and commits.
+
+Run the script on the VPS after a deploy that changed `agents/`, and once on a new installation after the first login (it needs the user):
+
+```bash
+docker compose exec -T librechat node /app/parley-agents/apply.js
+```
+
+`./agents` is mounted read-only into the `librechat` container at `/app/parley-agents` (a directory mount, so `git pull` shows up at once). The script uses LibreChat's own modules, as its agents API does: version history is kept (an update adds a version, an identical run adds nothing) and the only user gets the owner role on each agent. It fails if the database holds not exactly one user. Every definition is checked before the first write, and one invalid definition stops the whole run with nothing changed: the model is in `ANTHROPIC_MODELS`, the category exists, every tool is one that the `tools` and `playwright` servers actually offer (the script lists them over MCP, the same names LibreChat registers), and the prompt block exists. `--dry-run` does all the checks and writes nothing. Output has one line per agent and holds only ids and counts.
+
+A change takes effect immediately, without a restart: the next subagent run reads the agent from the database. A change of the `subagents` block in `librechat.yaml` still needs `docker compose up -d --force-recreate librechat`. The files are the source of truth: edits of an agent in the LibreChat UI are overwritten by the next run.
 
 ## Deployment on the VPS
 
@@ -263,7 +292,8 @@ Any user registered in LibreChat gets bots with a terminal in the `tools` contai
 1. Set `ALLOW_REGISTRATION=true` in `.env`, then run `docker compose up -d --force-recreate librechat`.
 2. From your computer open the tunnel `ssh -L 3080:127.0.0.1:3080 <VPS>` and register in LibreChat at `http://localhost:3080`.
 3. Set `ALLOW_REGISTRATION=false` in `.env` again, then run `docker compose up -d --force-recreate librechat`.
-4. Only after that does the administrator add the Caddy route (section 7).
+4. Create the saved agents for the new user: `docker compose exec -T librechat node /app/parley-agents/apply.js` (section "The saved agents").
+5. Only after that does the administrator add the Caddy route (section 7).
 
 ### 6. MCP connection
 
@@ -286,6 +316,12 @@ docker compose up -d --build --remove-orphans
 
 `--remove-orphans` stops and removes containers of services deleted from `docker-compose.yml`.
 
+If the pull changed `agents/`, apply the saved agents afterwards (the container must already run the new compose file, which mounts the directory):
+
+```bash
+docker compose exec -T librechat node /app/parley-agents/apply.js
+```
+
 `librechat.yaml` is bind-mounted as a single file: compose does not notice its changes, and `git pull` replaces the file (new inode), so the running container keeps the old version. After a change to `librechat.yaml` recreate LibreChat explicitly:
 
 ```bash
@@ -298,4 +334,4 @@ Logs of all containers are rotated by Docker (3 files of 10 MB each per containe
 
 ## Adding a model
 
-Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list. The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-carbon` and `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Carbon`; otherwise the context window falls back to 1,024 tokens.
+Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list (the models of the saved agents as well: `apply.js` checks them). The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-carbon` and `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Carbon`; otherwise the context window falls back to 1,024 tokens.
