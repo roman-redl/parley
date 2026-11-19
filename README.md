@@ -50,6 +50,8 @@ Browser state lives only as long as one MCP session. `--isolated` keeps the prof
 
 A bot is an item of `modelSpecs` in `librechat.yaml`: a model, a label, a description, the connected `tools` MCP server and a short instruction (`promptPrefix`). The bot's actual prompt is not stored in this repository. The instruction makes the bot read two files from the vault whenever their full text is missing from the conversation: the shared bot rules and the file of its own role (a `text` block in each). That happens at the start, and again after LibreChat has trimmed or summarized old tool results of a long conversation. Those texts become the bot's system prompt. Editing a prompt in Obsidian therefore takes effect without a redeploy: the `tools` container pulls the vault clone every minute, and the next conversation reads the new text.
 
+Every bot except the three English ones has `subagents` enabled (`allowSelf`): the model gets a `subagent` tool that runs a copy of the bot with the same prompt and tools but without the conversation history, and only the final text of the copy returns to the conversation. Search results and pages read by the copy therefore do not stay in the conversation and are not resent with every later request. The copy cannot start subagents itself. When a bot uses it is set by the shared bot rules in the vault (section ПОДАГЕНТЫ).
+
 Bots:
 
 | Bot | Provider | Model |

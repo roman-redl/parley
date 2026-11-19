@@ -114,6 +114,13 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      # The subagent tool: the bot can run a copy of itself (same prompt and tools, no
+      # conversation history, cannot start subagents of its own) and gets back only the
+      # final text, so search results stay out of the conversation. When to use it is set
+      # by the shared bot rules in the vault. Not on the English bots: they do not search.
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -130,6 +137,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -161,6 +171,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: google
         model: gemini-4-carbon
@@ -183,6 +196,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: google
         model: gemini-4-hydrogen
@@ -202,6 +218,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -218,6 +237,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -234,6 +256,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -250,6 +275,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -266,6 +294,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -282,6 +313,9 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      subagents:
+        enabled: true
+        allowSelf: true
       preset:
         endpoint: google
         model: gemini-3.8-flash
