@@ -92,6 +92,13 @@ interface:
 endpoints:
   all:
     maxToolResultChars: 40000
+  # Step limit of one reply (default 50). The main agent gets this many graph steps (a round of
+  # tool calls costs 2, and from 3 rounds before the end it is told to converge); a subagent gets
+  # floor(limit / 3) model turns and loses its whole result when it runs out, with no warning.
+  # 75 gives a subagent 25 turns, a margin over the 20 tool calls the bot rules allow it.
+  # The other agents settings keep their defaults (the block is parsed with schema defaults).
+  agents:
+    recursionLimit: 75
 
 # Bots. Each bot is a model spec: a model plus a short instruction that makes it read its role
 # from the Obsidian vault whenever its text is missing from the conversation: at the start and
