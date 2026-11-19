@@ -4,9 +4,12 @@
 /*
  * Creates or updates the saved LibreChat agents from agents/<name>.json (settings) and
  * agents/<name>.md (the prompt: the first fenced block tagged `text`). Every .json that has a
- * .md with the same base name is an agent. Idempotent: run it after every deploy that changes
- * the files in agents/. Runs inside the librechat container, where the directory is mounted
- * read-only as /app/parley-agents:
+ * .md with the same base name is an agent family: the file holds the fields shared by all its
+ * agents (name, description, tools, ...) and a `variants` array; every variant is one LibreChat
+ * agent with its own `id`, `provider`, `model` and `model_parameters`, and all variants share
+ * the one prompt. Idempotent: run it after every deploy that changes the files in agents/.
+ * Runs inside the librechat container, where the directory is mounted read-only as
+ * /app/parley-agents:
  *
  *   docker compose exec -T librechat node /app/parley-agents/apply.js [--dry-run]
  *
@@ -44,6 +47,11 @@ const FIELDS = [
   'category',
 ];
 
+// Set per variant in `variants`; everything else in the .json is shared by all variants.
+const VARIANT_FIELDS = ['id', 'provider', 'model', 'model_parameters'];
+// The *_MODELS environment variable that lists the models LibreChat accepts per provider.
+const MODELS_ENV = { anthropic: 'ANTHROPIC_MODELS', google: 'GOOGLE_MODELS' };
+
 const fail = (message) => {
   throw new Error(message);
 };
@@ -62,25 +70,51 @@ function readInstructions(name) {
   return text;
 }
 
-function readDefinition(name) {
-  const { id, ...rest } = JSON.parse(fs.readFileSync(path.join(__dirname, `${name}.json`), 'utf8'));
-  for (const key of ['name', 'provider', 'model', 'category']) {
-    if (typeof rest[key] !== 'string' || !rest[key]) {
+/** Returns one { id, definition } per variant: the shared fields, the variant's own, the prompt. */
+function readDefinitions(name) {
+  const { variants, ...shared } = JSON.parse(
+    fs.readFileSync(path.join(__dirname, `${name}.json`), 'utf8'),
+  );
+  for (const key of ['name', 'category']) {
+    if (typeof shared[key] !== 'string' || !shared[key]) {
       fail(`${name}.json: "${key}" must be a non-empty string`);
     }
   }
-  if (typeof id !== 'string' || !id) {
-    fail(`${name}.json: "id" must be a non-empty string`);
+  for (const key of VARIANT_FIELDS) {
+    if (key in shared) {
+      fail(`${name}.json: "${key}" belongs inside "variants", not at the top level`);
+    }
   }
   for (const key of ['tools', 'mcpServerNames']) {
-    if (!Array.isArray(rest[key]) || rest[key].length === 0) {
+    if (!Array.isArray(shared[key]) || shared[key].length === 0) {
       fail(`${name}.json: "${key}" must be a non-empty array`);
     }
   }
-  if (new Set(rest.tools).size !== rest.tools.length) {
+  if (new Set(shared.tools).size !== shared.tools.length) {
     fail(`${name}.json: "tools" has duplicates`);
   }
-  return { id, definition: { ...rest, instructions: readInstructions(name) } };
+  if (!Array.isArray(variants) || variants.length === 0) {
+    fail(`${name}.json: "variants" must be a non-empty array`);
+  }
+
+  const instructions = readInstructions(name);
+  return variants.map((variant, index) => {
+    const label = `${name}.json: variants[${index}]`;
+    if (variant === null || typeof variant !== 'object' || Array.isArray(variant)) {
+      fail(`${label} must be an object`);
+    }
+    const unknown = Object.keys(variant).filter((key) => !VARIANT_FIELDS.includes(key));
+    if (unknown.length > 0) {
+      fail(`${label}: unknown fields ${unknown.join(', ')} (allowed: ${VARIANT_FIELDS.join(', ')})`);
+    }
+    const { id, ...own } = variant;
+    for (const key of ['id', 'provider', 'model']) {
+      if (typeof variant[key] !== 'string' || !variant[key]) {
+        fail(`${label}: "${key}" must be a non-empty string`);
+      }
+    }
+    return { id, definition: { ...shared, ...own, instructions } };
+  });
 }
 
 /** Base names of the agents: a .json with a .md of the same name next to it. */
@@ -162,11 +196,21 @@ async function validate({ definition, delimiter, AgentCategory }) {
   const { provider, model, model_parameters: params, tools, mcpServerNames, category } = definition;
 
   // LibreChat silently replaces a model missing from the *_MODELS list with the first one.
-  const modelsEnv = { anthropic: process.env.ANTHROPIC_MODELS }[provider];
-  if (modelsEnv === undefined) {
+  const modelsVar = MODELS_ENV[provider];
+  if (modelsVar === undefined) {
     console.log(`note: no model list known for provider "${provider}", model not checked`);
-  } else if (!modelsEnv.split(',').map((m) => m.trim()).includes(model)) {
-    problems.push(`model "${model}" is not in ANTHROPIC_MODELS`);
+  } else if (
+    !(process.env[modelsVar] ?? '').split(',').map((m) => m.trim()).includes(model)
+  ) {
+    problems.push(`model "${model}" is not in ${modelsVar}`);
+  }
+  // Without these LibreChat falls back to a 1,024-token context for gemini-4-* (no data for them).
+  if (provider === 'google') {
+    for (const key of ['maxContextTokens', 'maxOutputTokens']) {
+      if (!Number.isInteger(params?.[key]) || params[key] <= 0) {
+        problems.push(`model_parameters.${key} must be a positive integer for a google variant`);
+      }
+    }
   }
   if (params?.model !== undefined && params.model !== model) {
     problems.push(`model_parameters.model "${params.model}" differs from model "${model}"`);
@@ -227,18 +271,24 @@ async function main() {
   const seenIds = new Set();
   for (const name of findAgentNames()) {
     try {
-      const { id, definition } = readDefinition(name);
-      if (seenIds.has(id)) {
-        fail(`id "${id}" is used by more than one agent`);
+      for (const { id, definition } of readDefinitions(name)) {
+        // A broken variant is reported under its own id and does not hide the other problems.
+        try {
+          if (seenIds.has(id)) {
+            fail(`id "${id}" is used by more than one agent`);
+          }
+          seenIds.add(id);
+          const found = await validate({
+            definition,
+            delimiter: Constants.mcp_delimiter,
+            AgentCategory,
+          });
+          problems.push(...found.map((problem) => `${id}: ${problem}`));
+          plans.push({ id, definition, existing: await db.getAgent({ id }) });
+        } catch (error) {
+          problems.push(`${id}: ${error.message}`);
+        }
       }
-      seenIds.add(id);
-      const found = await validate({
-        definition,
-        delimiter: Constants.mcp_delimiter,
-        AgentCategory,
-      });
-      problems.push(...found.map((problem) => `${name}: ${problem}`));
-      plans.push({ name, id, definition, existing: await db.getAgent({ id }) });
     } catch (error) {
       problems.push(`${name}: ${error.message}`);
     }

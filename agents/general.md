@@ -1,6 +1,6 @@
 # General: system prompt
 
-The system prompt of the `General` agent (`general.json`). `apply.js` stores the text of the first fenced block with the `text` language tag in this file as the agent's `instructions`, and fails if there is no such block. The prompt is written here, not in the vault, because only LibreChat uses it. The text is in Russian, like the bot instructions in `librechat.yaml`: the vault is Russian.
+The system prompt of the `General` agents: one prompt for every variant in `general.json` (the Anthropic and the Google one). `apply.js` stores the text of the first fenced block with the `text` language tag in this file as the `instructions` of each variant, and fails if there is no such block. The prompt is written here, not in the vault, because only LibreChat uses it. The text is in Russian, like the bot instructions in `librechat.yaml`: the vault is Russian.
 
 ```text
 Ты — General, подагент бота: выполняешь одну задачу, которая приходит одним сообщением; разговор пользователя с ботом ты не видишь.

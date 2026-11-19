@@ -1,16 +1,6 @@
 {
-  "id": "agent_general",
   "name": "General",
   "description": "Any other delegated work: edits across many vault notes, commands and diagnostics on the VPS host, data processing in the terminal. All file, terminal and browser tools. Makes edits without committing; lists changed files.",
-  "provider": "anthropic",
-  "model": "claude-sonnet-5-5",
-  "model_parameters": {
-    "model": "claude-sonnet-5-5",
-    "effort": "medium",
-    "web_search": true,
-    "promptCache": true,
-    "promptCacheTtl": "5m"
-  },
   "tools": [
     "read_file_mcp_tools",
     "read_multiple_files_mcp_tools",
@@ -49,5 +39,32 @@
   ],
   "mcpServerNames": ["tools", "playwright"],
   "recursion_limit": 75,
-  "category": "general"
+  "category": "general",
+  "variants": [
+    {
+      "id": "agent_general",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "model_parameters": {
+        "model": "claude-sonnet-5-5",
+        "effort": "medium",
+        "web_search": true,
+        "promptCache": true,
+        "promptCacheTtl": "5m"
+      }
+    },
+    {
+      "id": "agent_general_google",
+      "provider": "google",
+      "model": "gemini-4-hydrogen",
+      "model_parameters": {
+        "model": "gemini-4-hydrogen",
+        "thinking": true,
+        "thinkingLevel": "medium",
+        "web_search": true,
+        "maxContextTokens": 550000,
+        "maxOutputTokens": 32768
+      }
+    }
+  ]
 }
