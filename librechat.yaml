@@ -82,16 +82,29 @@ interface:
   # LibreChat hides the parameters panel when modelSpecs exist; keep reasoning/thinking controls.
   parameters: true
 
-# Defaults for every endpoint. Only the tool result cap is set here; no other endpoint option
-# changes. A single read_file of a web page (isUrl) once returned 400,000 characters
-# (about 206k tokens) and was resent with every later request of the conversation. Longer
-# results are cut to this size: head and tail are kept, the middle is replaced by a
-# "[truncated: N chars exceeded 40000 limit]" notice.
+# Cap of a single tool result, in characters. A longer result is cut: head and tail are kept,
+# the middle is replaced by a "[truncated: N chars exceeded <limit> limit]" notice. A single
+# read_file of a web page (isUrl) once returned 400,000 characters (about 206k tokens) that
+# was resent with every later request of the conversation, hence the default of 40,000 in
+# `all`. The cap of an endpoint block wins over `all`.
+# anthropic and google get 500,000: a screenshot from the browser tool (browser_take_screenshot
+# without a filename) travels as base64 and counts against this cap in characters, a 1280x800
+# screenshot takes up to about 400,000 of them, and a larger one is dropped from the result
+# ("[omitted 1 oversized atomic tool-content block: image_url]"). The model is billed for the
+# picture by pixels (about 1,400 tokens for 1280x800), not by the characters. The higher cap
+# also lets a large text result through, so the bot rules prevent those at the source: pages
+# are read into files and searched there, never with read_file on a URL.
+# openAI stays at 40,000 (no block, so `all` applies): the bots on it are the English tutors,
+# which have no reason to search the web or read charts; a screenshot taken there is dropped.
 # Caution: chat title generation reads endpoints.all instead of a per-endpoint block, so
 # title settings added later under a specific endpoint would be ignored while `all` exists.
 endpoints:
   all:
     maxToolResultChars: 40000
+  anthropic:
+    maxToolResultChars: 500000
+  google:
+    maxToolResultChars: 500000
   # Step limit of one reply (default 50). The main agent gets this many graph steps (a round of
   # tool calls costs 2, and from 3 rounds before the end it is told to converge); a subagent gets
   # floor(limit / 3) model turns and loses its whole result when it runs out, with no warning.
@@ -128,14 +141,17 @@ modelSpecs:
         - tools
         - playwright
       # The subagent tool: the bot hands a task to one of two saved agents and gets back only
-      # their final text, so search results and file contents stay out of the conversation. Both
-      # are created by agents/apply.js from agents/*.json and agents/*.md and run on Sonnet
-      # (effort medium, prompt cache 5 minutes; the bots keep the 1 hour cache) without the
-      # conversation history. Researcher: search and reading, 11 tools, a small start.
-      # General: any other work (edits, commands, data processing), almost all tools of tools
-      # and playwright. Neither can start subagents (allowSelf: false, so a copy of the bot is
-      # not offered). When to use which is set by the shared bot rules in the vault. Not on the
-      # English bots: they do not search.
+      # their final text, so search results and file contents stay out of the conversation. The
+      # agents are created by agents/apply.js from agents/*.json and agents/*.md and run
+      # without the conversation history. Each of the two exists in two variants with the same
+      # tools and prompt: Anthropic bots get agent_researcher and agent_general (Sonnet, effort
+      # medium, prompt cache 5 minutes, as on the bots), Google bots get
+      # agent_researcher_google and agent_general_google (Gemini 4 Hydrogen, thinking level
+      # medium, Google Search grounding). Researcher: search and reading, 11 tools, a small
+      # start. General: any other work (edits, commands, data processing), almost all tools of
+      # tools and playwright. Neither can start subagents (allowSelf: false, so a copy of the
+      # bot is not offered). When to use which is set by the shared bot rules in the vault. Not
+      # on the English bots: they do not search.
       subagents:
         enabled: true
         allowSelf: false
@@ -143,6 +159,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: Quick
         effort: medium
         web_search: true
@@ -150,8 +168,8 @@ modelSpecs:
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Quick.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 
-    - name: Erudite-assistant-Opus
-      label: Erudite-assistant-Opus
+    - name: Erudite-assistant-Fable
+      label: Erudite-assistant-Fable
       description: Personal analyst with the full context of the vault
       mcpServers:
         - tools
@@ -162,10 +180,19 @@ modelSpecs:
         agent_ids: [agent_researcher, agent_general]
       preset:
         endpoint: anthropic
-        model: claude-opus-5-5
-        modelLabel: Erudite-assistant-Opus
+        # LibreChat 0.8.8 has no entry for claude-fable-5-2: the context window (1M) and the
+        # prices come from the claude-fable-5 entry by prefix, so the recorded cost is higher
+        # than the real one (10 / 50 / read 1 against 8 / 40 / 0.2 per million tokens).
+        model: claude-fable-5-2
+        # Prompt cache for 5 minutes instead of the default 1 hour: a 5-minute write costs 1.25
+        # input price against 2, every tool call of a reply writes new results, and the first
+        # message after a reply with many tool calls rewrites that reply anyway (LibreChat rebuilds
+        # the history from the database without thinking signatures and tool images). Pauses of
+        # 5-60 minutes, where 1 hour wins, are rare. The same on every Anthropic bot.
+        promptCacheTtl: "5m"
+        modelLabel: Erudite-assistant-Fable
         # Reasoning effort (sent as output_config.effort).
-        effort: high
+        effort: medium
         # Anthropic's native server-side web search tool. LibreChat's own webSearch is not
         # enabled (neither interface.webSearch nor spec-level webSearch): it would replace
         # the native tool.
@@ -180,7 +207,7 @@ modelSpecs:
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 
-    # The same role file as Erudite-assistant-Opus, on Gemini 4 Carbon and Hydrogen. Notes:
+    # The same role file as Erudite-assistant-Fable, on Gemini 4 Carbon and Hydrogen. Notes:
     # LibreChat v0.8.8 has no price or context window data for these models (LibreChat issue
     # #17074), and the sources of the native search (Google Search grounding) are not shown in
     # the UI (issue #16665).
@@ -194,7 +221,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_google, agent_general_google]
       preset:
         endpoint: google
         model: gemini-4-carbon
@@ -220,7 +247,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_google, agent_general_google]
       preset:
         endpoint: google
         model: gemini-4-hydrogen
@@ -247,6 +274,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: Doctor
         effort: high
         web_search: true
@@ -267,6 +296,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: BackEnder
         effort: high
         web_search: true
@@ -287,6 +318,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: Backender-villain
         effort: high
         web_search: true
@@ -307,6 +340,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: Insightful-genius
         effort: high
         web_search: true
@@ -327,6 +362,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
         modelLabel: Avtor
         effort: high
         web_search: true
@@ -343,12 +380,17 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_google, agent_general_google]
       preset:
         endpoint: google
-        model: gemini-3.8-flash
+        model: gemini-4-hydrogen
         modelLabel: Brilliant-Sage
+        # The same model settings as Erudite-assistant-Hydrogen.
+        thinking: true
+        thinkingLevel: high
         maxContextTokens: 550000
+        # Google Search grounding.
+        web_search: true
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Brilliant-Sage.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 
