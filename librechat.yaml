@@ -3,6 +3,12 @@ version: 1.3.17
 
 cache: true
 
+# Format the server re-encodes uploaded images to (default png). With the larger resize limits
+# of librechat/patch-images.sh a phone photo saved as PNG weighs 9-11 MB, above the 5 MB per
+# image that LibreChat lets through to Anthropic; as WebP it is about 1 MB. Also applies to
+# avatars and generated images.
+imageOutputType: webp
+
 # Single MCP container with tools: files and terminal in the notes and handoff clones.
 mcpServers:
   tools:
