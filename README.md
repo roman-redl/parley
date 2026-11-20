@@ -101,7 +101,7 @@ docker compose up -d --force-recreate librechat
 
 ## The saved agents
 
-Two types of saved LibreChat agents are the only subagent types of the bots: Researcher and General. Each type exists in two variants, one per provider of the calling bot: `agent_researcher_anthropic` and `agent_general_anthropic` for the Anthropic bots, `agent_researcher_google` and `agent_general_google` for the Google bots. Their definitions live in this repository and a script writes them into the LibreChat database, so they are reviewed and versioned like the rest of the config. The two variants of a type share the description, the tools, `recursion_limit` 75 and the prompt; they differ in the provider and the model parameters, because the preset of the calling bot is not passed to a subagent.
+Two types of saved LibreChat agents are the only subagent types of the bots: Researcher and General. Each type exists in two variants, one per provider of the calling bot: `agent_researcher_anthropic` and `agent_general_anthropic` for the Anthropic bots, `agent_researcher_google` and `agent_general_google` for the Google bots. Their definitions live in this repository and a script writes them into the LibreChat database, so they are reviewed and versioned like the rest of the config. The two variants of a type share the description, the tools, `recursion_limit` 150 and the prompt; they differ in the provider and the model parameters, because the preset of the calling bot is not passed to a subagent. `recursion_limit` is the step limit of a subagent: 3 graph steps are one model turn, so 150 gives a subagent 50 turns (the bots themselves keep the 75 of `endpoints.agents.recursionLimit` in `librechat.yaml`, about 25 rounds of tool calls before the step-budget hook). Tests showed 25 turns are too few: a subagent that runs out of turns loses its whole result silently. The prompts keep a soft budget of 20 tool calls; a full 50-turn run on Sonnet costs about $1.
 
 - The Anthropic variants run on Sonnet (`claude-sonnet-5-5`), effort `medium`, with the provider's native web search and a prompt cache of 5 minutes, like the Anthropic bots.
 - The Google variants run on `gemini-4-hydrogen`, thinking level `medium`, with Google Search grounding (`web_search: true`). `maxContextTokens` (550,000) and `maxOutputTokens` (32,768) are set explicitly: LibreChat 0.8.8 has no data for `gemini-4-*`, and without `maxContextTokens` the context window becomes 1,024 tokens.
@@ -252,6 +252,7 @@ What to fill in:
 - `ALLOW_REGISTRATION` stays `false`; it is opened only for the first login (section 5).
 - `NOTES_DIR=/opt/parley-data/notes`, `HANDOFF_DIR=/opt/parley-data/handoff`, `TOOLS_SSH_DIR=/opt/parley-ssh`.
 - `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL` — the signature of the bots' commits.
+- `PARLEY_TEST_EMAIL`, `PARLEY_TEST_PASSWORD` — the test user of the scripted checks, optional (section "Testing the bots").
 - `UID`, `GID` — from step 1.
 - `ENDPOINTS`, `ANTHROPIC_MODELS`, `GOOGLE_MODELS`, `OPENAI_MODELS` — already set in the template.
 
@@ -349,3 +350,50 @@ Logs of all containers are rotated by Docker (3 files of 10 MB each per containe
 ## Adding a model
 
 Append the model name to `ANTHROPIC_MODELS`, `GOOGLE_MODELS` or `OPENAI_MODELS` in `.env` on the VPS, then recreate the container: `docker compose up -d --force-recreate librechat`. A bot's model must stay in the matching `*_MODELS` list: otherwise LibreChat silently substitutes the first model of the list (the models of the saved agents as well: `apply.js` checks them against `ANTHROPIC_MODELS` and `GOOGLE_MODELS`). The models of the bots above need these entries: `gpt-5.4` and `gpt-5.4-mini` in `OPENAI_MODELS`, `gemini-4-carbon` and `gemini-4-hydrogen` in `GOOGLE_MODELS` (the `.env.example` template has them; an existing `.env` on the VPS is updated by hand). A model unknown to the installed LibreChat version needs `maxContextTokens` in the bot preset, as in `Erudite-assistant-Carbon`; otherwise the context window falls back to 1,024 tokens.
+
+## Testing the bots
+
+`test/` holds a harness that sends real chat turns to the bots and reports what happened, the way the web client would. It is for a live smoke check after changes to `librechat.yaml`, `agents/` or the patches.
+
+- `chat.mjs` runs inside the `librechat` container: it logs in as the test user, sends one turn to a bot (the spec preset fields go with it, as the web client sends them) and waits for the reply. A name starting with `agent_` chats with that saved agent directly. It can attach an image (`--image`) or a document (`--file`, with `--file-mode provider|text`) and continue a conversation (`--conv`, `--parent`).
+- `report.js` is a mongosh report of a conversation: tool calls, subagent calls with their tools and final text, the final reply and the cost by context and model.
+- `steps.js` is a mongosh dump of the last reply part by part: tool calls, think and text parts in order, with the parts of subagents indented under their call.
+- `run.sh` is the driver from a workstation: it copies the scripts to the VPS over ssh, runs the chat in the container and prints the report.
+
+The test user is created once, on the VPS:
+
+```bash
+docker compose exec librechat npm run create-user
+docker compose exec -T librechat node /app/parley-agents/apply.js
+```
+
+Use an address and a password of your choice, no two-factor authentication, role USER. The second command gives the new user view access to the saved agents. Put the credentials into `.env` on the VPS as `PARLEY_TEST_EMAIL` and `PARLEY_TEST_PASSWORD`; the driver reads them there and never prints them.
+
+Environment of `run.sh` on the workstation:
+
+| Variable | Meaning |
+| --- | --- |
+| `PARLEY_SSH` | ssh destination of the VPS: an alias from `~/.ssh/config` or `user@host`; required |
+| `PARLEY_SSH_KEY` | ssh key, passed as `-i`; optional |
+| `PARLEY_DIR` | the compose project directory on the VPS; default `/opt/parley` |
+| `PARLEY_TAG` | isolates the staging files, so two runs can go in parallel; optional |
+
+```bash
+export PARLEY_SSH=vps
+./test/run.sh Quick "question"                                  # one turn to a bot (a modelSpecs name), then the report
+./test/run.sh Quick "follow-up" --conv <conversationId> --parent <responseMessageId>
+./test/run.sh Quick "what is in the picture?" --image ./picture.png
+./test/run.sh Quick "summarize" --file ./document.pdf           # --file-mode text: "Upload as Text"
+./test/run.sh agent_researcher_anthropic "question"             # a saved agent directly, no bot
+./test/run.sh --report <conversationId>                         # the report of an existing conversation
+./test/run.sh --steps <conversationId>                          # the last reply part by part
+```
+
+The first turn prints `conversationId` and `responseMessageId`; the follow-up takes them from there. `--dump` keeps the raw SSE stream in `test/last-sse.txt` (ignored by git); `--upload-only` only uploads the attachment and prints the response.
+
+Notes:
+
+- Every run spends real API money; a long Researcher run costs about $1.
+- LibreChat limits logins (about 7 per 5 minutes). `chat.mjs` caches the token in the container (`/tmp/parley-token`) and logs in again only on a 401.
+- The browser (Playwright MCP) is one shared session for all conversations, so run browser scenarios one at a time.
+- The test conversations stay under the test user; they are not visible to the owner's account.

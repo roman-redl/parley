@@ -7,6 +7,7 @@ Config repository of a personal "Poe" on a VPS: docker-compose, `librechat.yaml`
 - API keys (Anthropic, Gemini, OpenAI) exist only in `.env` on the VPS. The repository holds only `.env.example` with empty secrets; the real `.env` and the `data/` directory are ignored by git.
 - Do not run anything with keys locally. Calls to paid APIs are made only from the VPS. Do not start containers on this machine; `docker compose config` with a dummy `.env` and YAML checks are fine.
 - Do not print secrets from the VPS to the terminal or chat.
+- After changes to `librechat.yaml`, `agents/` or the patches, check the bots live with `test/run.sh` (README, section "Testing the bots"). It needs `PARLEY_SSH` and spends real API money; the credentials of the test user stay on the VPS in `.env`.
 
 ## Language
 
