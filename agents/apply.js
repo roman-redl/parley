@@ -21,6 +21,9 @@
  * in api/server/controllers/agents/v1.js) instead of writing to MongoDB directly, so version
  * history, the MCP server index and the access entries stay the way the UI would leave them.
  * Output never contains secrets: only ids, counts and names.
+ *
+ * The ADMIN user owns the agents; every other user gets view access, so their bots can call
+ * the agents as subagents.
  */
 
 const fs = require('fs');
@@ -249,20 +252,30 @@ async function main() {
   // connect.js registers the `~` alias for /app/api and opens the MongoDB connection.
   await require('/app/config/connect')();
   const mongoose = require('mongoose');
-  const { Constants, AccessRoleIds, ResourceType, PrincipalType } = require('librechat-data-provider');
+  const {
+    Constants,
+    AccessRoleIds,
+    ResourceType,
+    PrincipalType,
+    SystemRoles,
+  } = require('librechat-data-provider');
   // Models first: the services below expect them to be registered.
   const { User, AclEntry, AgentCategory } = require('~/db/models');
   const db = require('~/models');
   const { grantPermission } = require('~/server/services/PermissionService');
 
-  const userCount = await User.countDocuments({});
-  if (userCount !== 1) {
-    fail(`expected exactly one user, found ${userCount}`);
+  const adminCount = await User.countDocuments({ role: SystemRoles.ADMIN });
+  if (adminCount !== 1) {
+    fail(`expected exactly one ADMIN user, found ${adminCount}`);
   }
-  const user = await User.findOne({}).select('_id').lean();
+  const owner = await User.findOne({ role: SystemRoles.ADMIN }).select('_id').lean();
+  // Everyone else only gets view access. Ids only: emails never reach the output.
+  const viewers = await User.find({ role: { $ne: SystemRoles.ADMIN } }).select('_id').lean();
 
-  if (!(await db.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER))) {
-    fail(`access role ${AccessRoleIds.AGENT_OWNER} not found: LibreChat has not seeded its roles`);
+  for (const roleId of [AccessRoleIds.AGENT_OWNER, AccessRoleIds.AGENT_VIEWER]) {
+    if (!(await db.findRoleByIdentifier(roleId))) {
+      fail(`access role ${roleId} not found: LibreChat has not seeded its roles`);
+    }
   }
 
   // Phase 1, no writes: load and validate every definition, and compare it with the stored agent.
@@ -297,7 +310,7 @@ async function main() {
     fail(`invalid definitions, nothing was written:\n  - ${problems.join('\n  - ')}`);
   }
 
-  // Phase 2: create or update each agent, then make sure the user owns it.
+  // Phase 2: create or update each agent, then set the owner and viewer access.
   const tag = DRY_RUN ? '[dry-run] ' : '';
   const will = DRY_RUN ? 'would be ' : '';
   for (const { id, definition, existing } of plans) {
@@ -306,7 +319,7 @@ async function main() {
     if (!existing) {
       action = `${will}created`;
       if (!DRY_RUN) {
-        agent = await db.createAgent({ ...definition, id, author: user._id });
+        agent = await db.createAgent({ ...definition, id, author: owner._id });
       }
     } else {
       // mcpServerNames is an index without a stable order; the other fields compare as stored.
@@ -323,32 +336,49 @@ async function main() {
         if (!DRY_RUN) {
           const update = Object.fromEntries(changed.map((field) => [field, definition[field]]));
           // updateAgent snapshots the previous state into `versions` itself.
-          agent = await db.updateAgent({ id }, update, { updatingUserId: String(user._id) });
+          agent = await db.updateAgent({ id }, update, { updatingUserId: String(owner._id) });
         }
       }
-      if (String(existing.author) !== String(user._id)) {
-        console.log(`warning: ${id}: the author is ${existing.author}, not the only user`);
+      if (String(existing.author) !== String(owner._id)) {
+        console.log(`warning: ${id}: the author is ${existing.author}, not the ADMIN user`);
       }
     }
 
-    // Owner access for the only user; the upsert makes a repeated run harmless. A missing entry
-    // after a failed earlier run is repaired here too.
-    const aclQuery = agent && {
-      principalType: PrincipalType.USER,
-      principalId: user._id,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
+    // Owner access for the ADMIN user, view access for everyone else (LibreChat checks VIEW for
+    // the user whose bot starts an agent as a subagent); the upsert makes a repeated run harmless.
+    // A missing entry after a failed earlier run is repaired here too.
+    const hasEntry = async (user) =>
+      agent
+        ? Boolean(
+            await AclEntry.exists({
+              principalType: PrincipalType.USER,
+              principalId: user._id,
+              resourceType: ResourceType.AGENT,
+              resourceId: agent._id,
+            }),
+          )
+        : false;
+    const grant = async (user, accessRoleId) => {
+      if (!DRY_RUN) {
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: user._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          accessRoleId,
+          grantedBy: owner._id,
+        });
+      }
     };
-    const hasAccess = aclQuery ? Boolean(await AclEntry.exists(aclQuery)) : false;
-    if (!DRY_RUN) {
-      await grantPermission({
-        principalType: PrincipalType.USER,
-        principalId: user._id,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        accessRoleId: AccessRoleIds.AGENT_OWNER,
-        grantedBy: user._id,
-      });
+
+    const hasAccess = await hasEntry(owner);
+    await grant(owner, AccessRoleIds.AGENT_OWNER);
+    let newViewers = 0;
+    for (const viewer of viewers) {
+      if (!(await hasEntry(viewer))) {
+        newViewers += 1;
+      }
+      await grant(viewer, AccessRoleIds.AGENT_VIEWER);
     }
 
     const perServer = definition.mcpServerNames.map(
@@ -357,6 +387,7 @@ async function main() {
     );
     console.log(
       `${tag}${id}: ${action}; owner ${hasAccess ? 'already present' : `${will}granted`}; ` +
+        `viewers ${viewers.length} (${newViewers} ${DRY_RUN ? 'would be granted' : 'new'}); ` +
         `model ${definition.model}, tools ${definition.tools.length} (${perServer.join(', ')}), ` +
         `instructions ${definition.instructions.length} chars`,
     );
