@@ -15,7 +15,7 @@
     "browser_wait_for_mcp_playwright"
   ],
   "mcpServerNames": ["tools", "playwright"],
-  "recursion_limit": 75,
+  "recursion_limit": 150,
   "category": "general",
   "variants": [
     {
