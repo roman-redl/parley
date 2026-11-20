@@ -114,7 +114,7 @@ endpoints:
   # floor(its limit / 3) model turns (3 graph steps = one turn) and loses its whole result when it
   # runs out, with no warning. The limit of a subagent is the `recursion_limit` of its saved agent
   # if set, else this value. The saved agents (agents/*.json) set 150, i.e. 50 turns, a margin over
-  # the 20 tool calls the bot rules allow them; 75 here would give only 25 turns, which tests
+  # the 33 tool calls their prompts allow; 75 here would give only 25 turns, which tests
   # showed to be too few. A full 50-turn run on Sonnet costs about $1.
   # The other agents settings keep their defaults (the block is parsed with schema defaults).
   agents:
