@@ -42,7 +42,7 @@
   "category": "general",
   "variants": [
     {
-      "id": "agent_general",
+      "id": "agent_general_anthropic",
       "provider": "anthropic",
       "model": "claude-sonnet-5-5",
       "model_parameters": {

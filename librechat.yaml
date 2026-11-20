@@ -87,8 +87,12 @@ interface:
 # read_file of a web page (isUrl) once returned 400,000 characters (about 206k tokens) that
 # was resent with every later request of the conversation, hence the default of 40,000 in
 # `all`. The cap of an endpoint block wins over `all`.
-# anthropic and google get 500,000: a screenshot from the browser tool (browser_take_screenshot
-# without a filename) travels as base64 and counts against this cap in characters, a 1280x800
+# anthropic and google get 500,000 as a workaround: LibreChat counts the base64 of an image
+# against this text cap. LibreChat-AI/agents PR #677 (open) gives images their own budget; after
+# upgrading to a LibreChat whose @librechat/agents includes it, drop both blocks and keep the
+# single 40,000 cap. Until then a new provider whose bots take screenshots needs its own block.
+# A screenshot from the browser tool (browser_take_screenshot without a filename) travels as
+# base64 and counts against this cap in characters, a 1280x800
 # screenshot takes up to about 400,000 of them, and a larger one is dropped from the result
 # ("[omitted 1 oversized atomic tool-content block: image_url]"). The model is billed for the
 # picture by pixels (about 1,400 tokens for 1280x800), not by the characters. The higher cap
@@ -144,10 +148,10 @@ modelSpecs:
       # their final text, so search results and file contents stay out of the conversation. The
       # agents are created by agents/apply.js from agents/*.json and agents/*.md and run
       # without the conversation history. Each of the two exists in two variants with the same
-      # tools and prompt: Anthropic bots get agent_researcher and agent_general (Sonnet, effort
-      # medium, prompt cache 5 minutes, as on the bots), Google bots get
-      # agent_researcher_google and agent_general_google (Gemini 4 Hydrogen, thinking level
-      # medium, Google Search grounding). Researcher: search and reading, 11 tools, a small
+      # tools and prompt: Anthropic bots get agent_researcher_anthropic and
+      # agent_general_anthropic (Sonnet, effort medium, prompt cache 5 minutes, as on the bots),
+      # Google bots get agent_researcher_google and agent_general_google (Gemini 4 Hydrogen,
+      # thinking level medium, Google Search grounding). Researcher: search and reading, 11 tools, a small
       # start. General: any other work (edits, commands, data processing), almost all tools of
       # tools and playwright. Neither can start subagents (allowSelf: false, so a copy of the
       # bot is not offered). When to use which is set by the shared bot rules in the vault. Not
@@ -155,7 +159,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -177,7 +181,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         # LibreChat 0.8.8 has no entry for claude-fable-5-2: the context window (1M) and the
@@ -270,7 +274,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -292,7 +296,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -314,7 +318,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -336,7 +340,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
@@ -358,7 +362,7 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher, agent_general]
+        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
         model: claude-opus-5-5
