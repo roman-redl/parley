@@ -82,6 +82,9 @@ services:
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-}
       GIT_COMMITTER_NAME: ${GIT_COMMITTER_NAME:-}
       GIT_COMMITTER_EMAIL: ${GIT_COMMITTER_EMAIL:-}
+      # Python started from the terminal tool prints at once; otherwise its output stays in the
+      # buffer and read_process_output shows nothing.
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ${NOTES_DIR:?set NOTES_DIR in .env}:/data/notes
       - ${HANDOFF_DIR:?set HANDOFF_DIR in .env}:/data/handoff
