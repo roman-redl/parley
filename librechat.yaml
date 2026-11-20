@@ -321,16 +321,17 @@ modelSpecs:
       subagents:
         enabled: true
         allowSelf: false
-        agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
+        agent_ids: [agent_researcher_google, agent_general_google]
       preset:
-        endpoint: anthropic
-        model: claude-opus-5-5
-        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
-        promptCacheTtl: "5m"
+        endpoint: google
+        model: gemini-4-hydrogen
         modelLabel: Backender-villain
-        effort: high
-        web_search: true
+        # The same model settings as Erudite-assistant-Hydrogen.
+        thinking: true
+        thinkingLevel: high
         maxContextTokens: 550000
+        # Google Search grounding.
+        web_search: true
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Backender-villain.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 

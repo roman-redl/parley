@@ -74,7 +74,7 @@ Bots:
 | `Erudite-assistant-Hydrogen` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
 | `Doctor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `BackEnder` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
-| `Backender-villain` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
+| `Backender-villain` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
 | `Insightful-genius` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `Avtor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `Brilliant-Sage` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
