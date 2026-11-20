@@ -13,11 +13,12 @@
 # itself, so the hook never sees Shift as held. Typing capitals, Shift+Enter, Shift+click and
 # every Shift-based shortcut are separate events that carry shiftKey, so they are unaffected.
 #
-# Checked against the v0.8.8 sources: nothing else reacts to a bare Shift keydown.
-# bindingFromEvent() (utils/shortcuts.ts) ignores modifier-only events, so the global shortcuts
-# (useKeyboardShortcuts.ts, window keydown) never needed them, and Ctrl+Shift+X chords match on
-# the final key with shiftKey set. The one consumer is the shortcut recorder in the settings
-# (ShortcutRecorder.tsx, a React onKeyDown on the element with data-testid
+# Checked against the v0.8.9 sources: nothing else reacts to a bare Shift keydown.
+# bindingFromEvent() (packages/chat/src/core/shortcuts.ts) ignores modifier-only events, so the
+# global shortcuts (client/src/hooks/useKeyboardShortcuts.ts, window keydown) never needed them,
+# the composer reacts only to Enter, and Ctrl+Shift+X chords match on the final key with
+# shiftKey set. The one consumer is the shortcut recorder in the settings
+# (client/src/components/Nav/ShortcutRecorder.tsx, a React onKeyDown on the element with data-testid
 # "shortcut-recorder-*"): it previews modifiers while they are held. The listener therefore
 # leaves keydown events that target that element alone. The stopped event is not cancelled
 # (no preventDefault), so the browser behaviour of the key is unchanged.

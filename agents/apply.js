@@ -207,7 +207,7 @@ async function validate({ definition, delimiter, AgentCategory }) {
   ) {
     problems.push(`model "${model}" is not in ${modelsVar}`);
   }
-  // Without these LibreChat falls back to a 1,024-token context for gemini-4-* (no data for them).
+  // Both caps are set explicitly: they keep the history and the reply below the model's own limits.
   if (provider === 'google') {
     for (const key of ['maxContextTokens', 'maxOutputTokens']) {
       if (!Number.isInteger(params?.[key]) || params[key] <= 0) {

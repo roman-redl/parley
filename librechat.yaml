@@ -1,5 +1,5 @@
-# LibreChat v0.8.8 config. Reference: https://www.librechat.ai/docs/configuration/librechat_yaml
-version: 1.3.17
+# LibreChat v0.8.9 config. Reference: https://www.librechat.ai/docs/configuration/librechat_yaml
+version: 1.3.19
 
 cache: true
 
@@ -187,9 +187,8 @@ modelSpecs:
         agent_ids: [agent_researcher_anthropic, agent_general_anthropic]
       preset:
         endpoint: anthropic
-        # LibreChat 0.8.8 has no entry for claude-fable-5-2: the context window (1M) and the
-        # prices come from the claude-fable-5 entry by prefix, so the recorded cost is higher
-        # than the real one (10 / 50 / read 1 against 8 / 40 / 0.2 per million tokens).
+        # LibreChat 0.8.9 has its own entry for claude-fable-5-2: context window 1M, prices
+        # 8 / 40 per million tokens, cache write 10, cache read 0.2.
         model: claude-fable-5-2
         # Prompt cache for 5 minutes instead of the default 1 hour: a 5-minute write costs 1.25
         # input price against 2, every tool call of a reply writes new results, and the first
@@ -215,9 +214,10 @@ modelSpecs:
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Erudite-assistant.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 
     # The same role file as Erudite-assistant-Fable, on Gemini 4 Carbon and Hydrogen. Notes:
-    # LibreChat v0.8.8 has no price or context window data for these models (LibreChat issue
-    # #17074), and the sources of the native search (Google Search grounding) are not shown in
-    # the UI (issue #16665).
+    # LibreChat v0.8.9 has price and context window data for Hydrogen (window 1,048,576, output
+    # limit 65,536, 1.5 / 7.5 per million tokens, cache read 0.075) but none for Carbon, which
+    # is counted at the generic "gemini" rate. The sources of the native search (Google Search
+    # grounding) are not shown in the UI (issue #16665).
 
     - name: Erudite-assistant-Carbon
       label: Erudite-assistant-Carbon
@@ -261,7 +261,8 @@ modelSpecs:
         modelLabel: Erudite-assistant-Hydrogen
         thinking: true
         thinkingLevel: high
-        # Required, as for Carbon.
+        # The same history cap as on every bot. Hydrogen has its own window data in LibreChat
+        # (see the note above), so unlike Carbon it would work without it.
         maxContextTokens: 550000
         # Google Search grounding.
         web_search: true

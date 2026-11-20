@@ -3,23 +3,32 @@
 # in the format "14:35", "вчера, 14:35", "18 нояб., 14:35", "18 нояб. 2025, 14:35".
 #
 # The LibreChat client renders a message timestamp as <time class="message-timestamp ..."
-# datetime="ISO">TEXT</time> (components/Chat/Messages/ui/MessageRow.tsx and the time component
-# next to it). TEXT is "10 минут назад" for messages under 24 hours old (React re-renders it every
-# minute) and an absolute date otherwise; `title` is set only for the recent ones. The bundled CSS
-# hides every timestamp until the message is hovered (.message-render .message-timestamp
-# {opacity:0} inside @media (hover:hover)). On bot messages the <time> sits in the visible header
-# row (div.agent-turn > h2 > time); on user messages it sits in a screen-reader-only header
-# (div.user-turn > h2.sr-only > time), so it is never visible; system messages keep theirs in a
-# span.sr-only, which this patch leaves alone. The steer-part (a user turn shown while a message
-# is steered) has an h2.sr-only too but no time, so the style matches only an h2.sr-only that
-# directly contains a timestamp (:has(> time.message-timestamp)).
+# datetime="ISO">TEXT</time> (packages/chat/src/components/messages/MessageTimestamp.tsx, placed
+# by MessageRow.tsx next to it). TEXT is "10 минут назад" for messages under 24 hours old (React
+# re-renders it every minute) and an absolute date otherwise; `title` is set only for the recent
+# ones. The bundled CSS hides every timestamp until the message is hovered (.message-render
+# .message-timestamp {opacity:0} inside @media (hover:hover) and @media not all and
+# (any-pointer:coarse), as plain unlayered CSS). On bot messages the <time> sits in the visible
+# header row (div.agent-turn > h2 > time); on user messages it sits in a screen-reader-only
+# header (div.user-turn > h2.sr-only > time), so it is never visible; system messages keep theirs
+# in a span.sr-only, and a bot turn with a hidden author line (interface.messageAuthor:
+# whenDifferent, not set here) in an h2.sr-only: this patch leaves both alone. The steer-part (a
+# user turn shown while a message is steered) has an h2.sr-only too but no time, so the style
+# matches only an h2.sr-only that directly contains a timestamp (:has(> time.message-timestamp)).
 #
 # The client is a prebuilt bundle, so the script injects one <style> and one <script> before
 # </head> of index.html:
 #   - the style forces opacity 1 on the timestamps and turns the user header from the bundle's
-#     .sr-only into a plain block (every property of that rule is undone; font-size 0 makes its
-#     label text nodes vanish, the <time> inside gets 12px/16px again). The user turn is a
-#     right-aligned column, so the time ends up above the bubble, on the right;
+#     .sr-only into a plain block (every property of that rule is undone: position, width,
+#     height, margin, padding, overflow, clip-path, white-space, border-width; font-size 0 makes
+#     its label text nodes vanish, the <time> inside gets 12px/16px again and a zero
+#     margin-inline-start, which replaces the ms-2 of the component). The user turn is a
+#     right-aligned column, so the time ends up above the bubble, on the right. Why the style
+#     wins: the bundle's .sr-only and ms-2 sit in @layer utilities, and any unlayered declaration
+#     beats a layered one whatever the specificity (the injected style is unlayered); the hide
+#     rule is unlayered with the specificity of two classes, so the opacity override carries
+#     !important, which beats every normal declaration, and no !important declaration of the
+#     bundle competes with it;
 #   - the script rewrites the text of every `.message-render time.message-timestamp[datetime]`
 #     with Intl (locale "ru", hardcoded: the users are Russian; local time zone of the device,
 #     24-hour clock) and sets `title` to the full date and time. The timestamp of the LAST bot
@@ -31,16 +40,18 @@
 #     the value differs, so the observer does not loop; the text is changed through nodeValue of
 #     the existing single Text child (React keeps a reference to that node), not by replacing it.
 #
-# Checked against the v0.8.8 client (the minified bundle): the component with the class string
-# below, the CSS rule that hides the timestamps and the exact definition of .sr-only (clip:
-# rect(...) and no clip-path, so the injected style undoes every property of it), and the markup
-# of MessageRow, which lives in a separate chunk: the expression choosing "user-turn" or
-# "agent-turn", the user header (h2 with className sr-only holding prefix, label and the
-# timestamp component) and the bot header (timestamp component with className "ml-auto shrink-0
-# font-normal"). The script fails if any of these is gone, because the style and the script then
-# no longer match the client. The checks search every assets/*.css and assets/*.js generically
-# (the file names are hashed): the rules, the class string and the MessageRow fragments must
-# occur exactly once, the other fragments at least once.
+# Checked against the v0.8.9 sources and client (the minified bundle): the component with the
+# class string below, the CSS rule that hides the timestamps and the exact definition of
+# .sr-only (clip-path: inset(50%) and no clip, so the injected style undoes every property of
+# it), and the markup of MessageRow, which lives in a separate chunk: the expressions choosing
+# "user-turn" (isUserSide) or "agent-turn" (not user side and not system), the user header (h2
+# with className sr-only holding prefix, label and the timestamp component) and the bot header
+# (timestamp component with className "ms-auto shrink-0 font-normal"; the "me-auto" variant
+# belongs to user-side turns that show their author, which the main chat has none of, and is
+# not relied on). The script fails if any of these is gone, because the style and the script
+# then no longer match the client. The checks search every assets/*.css and assets/*.js
+# generically (the file names are hashed): the rules, the class string and the MessageRow
+# fragments must occur exactly once, the other fragments at least once.
 #
 # The server reads index.html once at startup and serves it from memory, and precompressed
 # index.html.br and index.html.gz sit next to it (a static handler may serve those instead), so
@@ -64,8 +75,8 @@ fail() {
 
 STYLE=$(cat <<'EOF'
 .message-render .message-timestamp{opacity:1 !important}
-.message-render .user-turn > h2.sr-only:has(> time.message-timestamp){position:static;width:auto;height:auto;margin:0 0 4px 0;padding:0;overflow:visible;clip:auto;clip-path:none;white-space:normal;border-width:0;font-size:0;line-height:0}
-.message-render .user-turn > h2.sr-only:has(> time.message-timestamp) > time.message-timestamp{font-size:12px;line-height:16px;margin-left:0}
+.message-render .user-turn > h2.sr-only:has(> time.message-timestamp){position:static;width:auto;height:auto;margin:0 0 4px 0;padding:0;overflow:visible;clip-path:none;white-space:normal;border-width:0;font-size:0;line-height:0}
+.message-render .user-turn > h2.sr-only:has(> time.message-timestamp) > time.message-timestamp{font-size:12px;line-height:16px;margin-inline-start:0}
 EOF
 )
 
@@ -220,29 +231,31 @@ const check = (name, text, pattern, exactlyOnce) => {
     bad++;
   }
 };
-// CSS: the rule that hides timestamps until hover, and the exact .sr-only definition (every
-// property of it is undone by the injected style).
+// CSS: the rule that hides timestamps until hover (unlayered, inside media queries), and the exact
+// .sr-only definition (in @layer utilities; every property of it is undone by the injected style).
+// ".sr-only{" also keeps the responsive variant .max-md\:sr-only{ out of the match.
 check("CSS rule hiding timestamps",
   css, ".message-render .message-timestamp{opacity:0}", true);
 check("CSS .sr-only definition",
-  css, ".sr-only{clip:rect(0, 0, 0, 0);white-space:nowrap;border-width:0;width:1px;height:1px;margin:-1px;padding:0;position:absolute;overflow:hidden}", true);
+  css, ".sr-only{clip-path:inset(50%);white-space:nowrap;border-width:0;width:1px;height:1px;margin:-1px;padding:0;position:absolute;overflow:hidden}", true);
 // JS: the timestamp element, its datetime attribute, and the turn containers.
 check("timestamp class string",
-  js, "message-timestamp text-xs font-normal text-text-secondary", true);
+  js, "message-timestamp text-text-secondary text-xs font-normal", true);
 check("time element with a dateTime prop",
   js, /`time`,\{dateTime:[\w$.]+,/, false);
 check("message-render class", js, "message-render", false);
 check("agent-turn class", js, "agent-turn", false);
-// MessageRow lives in a separate chunk. The turn class is picked by one expression, and the user
-// header is the h2.sr-only holding [headerPrefix, label, <timestamp component>]; the bot header
-// passes className "ml-auto shrink-0 font-normal" to the timestamp component. (The steer-part in
-// another chunk is also div.user-turn > h2.sr-only but holds no time: the style does not touch it.)
+// MessageRow lives in a separate chunk. The turn classes are picked by two expressions
+// (`isUserSide && "user-turn"`, `!isUserSide && !isSystem && "agent-turn"`), and the user header
+// is the h2.sr-only holding [headerPrefix, label, <timestamp component>]; the bot header passes
+// className "ms-auto shrink-0 font-normal" to the timestamp component. (The steer-part in another
+// chunk is also div.user-turn > h2.sr-only but holds no time: the style does not touch it.)
 check("turn class selection (user-turn / agent-turn)",
-  js, /\?`user-turn`:`agent-turn`/, true);
+  js, /[\w$]+&&`user-turn`,![\w$]+&&![\w$]+&&`agent-turn`/, true);
 check("user header: h2.sr-only holding the timestamp component",
   js, /\(`h2`,\{className:`sr-only`,children:\[[\w$]+,[\w$]+,\(0,[\w$.]+\)\([\w$]+,\{value:[\w$]+\}\)\]\}\)/, true);
-check("bot header: timestamp component with ml-auto",
-  js, /\{value:[\w$]+,className:`ml-auto shrink-0 font-normal`\}/, true);
+check("bot header: timestamp component with ms-auto",
+  js, /\{value:[\w$]+,className:`ms-auto shrink-0 font-normal`\}/, true);
 process.exit(bad ? 1 : 0);
 EOF
 
