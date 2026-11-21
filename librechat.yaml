@@ -147,6 +147,28 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      # Tools the bots never called (counted over all conversations since 2026-11-15): their
+      # descriptions (~4,700 tokens) are not sent with every request; the model finds one through
+      # tool_search when it needs it. A found tool joins the tool list for the rest of the
+      # conversation, and that change rewrites the prompt cache once (the tool list opens the
+      # cached prefix), so only unused tools are deferred. The same list on every bot below.
+      deferLoading: &unusedTools
+        - interact_with_process_mcp_tools
+        - get_file_info_mcp_tools
+        - create_directory_mcp_tools
+        - move_file_mcp_tools
+        - browser_navigate_back_mcp_playwright
+        - browser_select_option_mcp_playwright
+        - browser_fill_form_mcp_playwright
+        - browser_tabs_mcp_playwright
+        - browser_console_messages_mcp_playwright
+        - browser_network_request_mcp_playwright
+        - browser_handle_dialog_mcp_playwright
+        - browser_file_upload_mcp_playwright
+        - browser_drag_mcp_playwright
+        - browser_drop_mcp_playwright
+        - browser_resize_mcp_playwright
+        - browser_emulate_media_mcp_playwright
       # The subagent tool: the bot hands a task to one of two saved agents and gets back only
       # their final text, so search results and file contents stay out of the conversation. The
       # agents are created by agents/apply.js from agents/*.json and agents/*.md and run
@@ -181,6 +203,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -225,6 +248,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -251,6 +275,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -275,6 +300,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -297,6 +323,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -319,6 +346,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -342,6 +370,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -364,6 +393,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -386,6 +416,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       subagents:
         enabled: true
         allowSelf: false
@@ -409,6 +440,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       preset:
         endpoint: openAI
         model: gpt-5.4-mini
@@ -422,6 +454,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       preset:
         endpoint: openAI
         model: gpt-5.4
@@ -440,6 +473,7 @@ modelSpecs:
       mcpServers:
         - tools
         - playwright
+      deferLoading: *unusedTools
       preset:
         endpoint: openAI
         model: gpt-5.4-mini

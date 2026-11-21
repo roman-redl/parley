@@ -93,6 +93,8 @@ All bots also get the `playwright` MCP server (`mcpServers` of each spec). The r
 
 Every bot sets `maxContextTokens: 550000`: LibreChat prunes older messages beyond it, which keeps a long conversation from being re-sent whole (after a pause longer than the prompt cache lifetime, the whole history is written to the cache again at the full price). The `gpt-5.4-mini` bots are the exception: the model's window is 400k, so LibreChat's own limit for it is kept. The cap does not limit the server-side loop of Anthropic's web search inside one request.
 
+The tool descriptions of `tools` (~12,100 tokens) and `playwright` (~6,000 tokens) go with every request. Every bot sets `deferLoading` (a YAML anchor, `&unusedTools`, defined on the first bot) to the 16 tools the bots never called: their descriptions (~4,700 tokens) are left out, and the model reaches one through LibreChat's `tool_search` if it needs it. A found tool joins the tool list for the rest of the conversation; the tool list opens the cached prefix, so that change rewrites the prompt cache once and costs an extra model round. Defer only tools that are rarely used; before adding one, count its calls in `messages` (`content[].tool_call.name`). The `deferred_tools` agent capability that this needs is on by default.
+
 A new bot is a new `modelSpecs` item in `librechat.yaml` (with its role file in the vault), then:
 
 ```bash
