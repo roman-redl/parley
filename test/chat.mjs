@@ -207,22 +207,59 @@ log(`conv=${conversationId} spec=${spec.name} model=${model}`);
 const dump = args.dump ? fs.createWriteStream(args.dump) : null;
 const seenTools = new Set();
 let final = null, error = null;
+let jobGone = false; // the server reports the generation job finished (or the stream is gone)
 const deadline = t0 + TIMEOUT_MS;
 
+// The SSE stream is not a reliable end marker on its own: the server closes it after the final
+// event, but a stream that stays open (or loses the final frame of a long reply) must not hang
+// the client. So the end is detected four ways: the final event (stop reading at once, do not
+// wait for the server to close the connection); the job status endpoint (polled while streaming:
+// the job record is deleted when the reply is saved); the saved reply itself (a non-user message
+// whose parent is our message, unfinished=false; it is written before the final event goes out);
+// and the overall deadline.
+const STATUS_POLL_MS = 30 * 1000;
+const END_GRACE_MS = 5 * 1000; // after a poll says "finished", wait for an in-flight final frame
+const savedReply = async () => {
+  const r = await api('/api/messages/' + conversationId, { signal: AbortSignal.timeout(30000) });
+  const list = r.ok ? await r.json() : [];
+  return (Array.isArray(list) ? list : list.messages || [])
+    .find((m) => !m.isCreatedByUser && m.parentMessageId === body.messageId);
+};
+const replyFinished = async () => {
+  const r = await api('/api/agents/chat/status/' + conversationId, { signal: AbortSignal.timeout(15000) });
+  if (r.ok && (await r.json()).active === false) return 'job finished per status endpoint';
+  const m = await savedReply();
+  if (m && !m.unfinished) return 'reply saved';
+  return null;
+};
+
 // the stream is resumable: if it drops before the final event, re-attach (a few times)
-for (let attempt = 0; attempt < 4 && !final && !error && Date.now() < deadline; attempt++) {
+for (let attempt = 0; attempt < 4 && !final && !error && !jobGone && Date.now() < deadline; attempt++) {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), Math.max(1, deadline - Date.now()));
+  let timedOut = false, graceTimer = null, polling = false;
+  const timer = setTimeout(() => { timedOut = true; ac.abort(); }, Math.max(1, deadline - Date.now()));
+  const poll = setInterval(async () => {
+    if (polling || graceTimer) return;
+    polling = true;
+    try {
+      const why = await replyFinished();
+      if (why) {
+        log(`${why}; waiting for the final event`);
+        graceTimer = setTimeout(() => { jobGone = true; ac.abort(); }, END_GRACE_MS);
+      }
+    } catch { /* a failed read proves nothing; try again */ } finally { polling = false; }
+  }, STATUS_POLL_MS);
   try {
     const res = await api('/api/agents/chat/stream/' + streamId, { signal: ac.signal });
+    if (res.status === 404 || res.status === 409) { jobGone = true; break; } // job already finished and removed
     if (!res.ok) die(`stream failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
     for await (const ev of sse(res)) {
-      dump?.write(`event: ${ev.event}\ndata: ${ev.raw}\n\n`);
+      dump?.write(`: +${((Date.now() - t0) / 1000).toFixed(1)}s\nevent: ${ev.event}\ndata: ${ev.raw}\n\n`);
       const d = ev.json;
       if (ev.event === 'error') { error = d?.error?.message ?? d?.message ?? ev.raw.slice(0, 500); break; }
       if (!d) continue;
       if (d.error && !d.final) { error = typeof d.error === 'string' ? d.error : JSON.stringify(d.error).slice(0, 500); break; }
-      if (d.final || d.responseMessage) { final = d; }
+      if (d.final || d.responseMessage) { final = d; break; } // the reply is complete: do not wait for the server to close the stream
       // tool starts: on_run_step with tool_calls details
       if (d.event === 'on_run_step') {
         for (const tc of d.data?.stepDetails?.tool_calls ?? []) {
@@ -231,20 +268,26 @@ for (let attempt = 0; attempt < 4 && !final && !error && Date.now() < deadline; 
       }
     }
   } catch (e) {
-    if (e.name === 'AbortError') die('timeout after 25 minutes');
-    log(`stream interrupted (${e.message}); re-attaching`);
-  } finally { clearTimeout(timer); }
+    if (timedOut) die('timeout after 25 minutes');
+    if (!jobGone) log(`stream interrupted (${e.message}); re-attaching`);
+  } finally {
+    clearTimeout(timer); clearInterval(poll); clearTimeout(graceTimer);
+    ac.abort(); // closes the connection when the loop left early (final, error, job finished)
+  }
 }
 dump?.end();
 if (error) die(error);
+if (!final && !jobGone && Date.now() >= deadline) die('timeout after 25 minutes');
 
 let msg = final?.responseMessage;
-if (!msg) { // fallback: read the saved assistant message from the API
-  log('no final event on stream; reading messages from the API');
-  const r = await api('/api/messages/' + conversationId);
-  const list = r.ok ? await r.json() : [];
-  msg = [...(Array.isArray(list) ? list : list.messages || [])].reverse().find((m) => !m.isCreatedByUser);
+if (!msg) { // fallback: read the saved reply from the API
+  log(`no final event on stream${jobGone ? ' (reply finished)' : ''}; reading the saved reply from the API`);
+  for (let i = 0; i < 5 && !msg; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 2000));
+    msg = await savedReply();
+  }
   if (!msg) die('no response message found');
+  if (msg.unfinished) log('WARNING: the saved reply is marked unfinished (aborted or failed turn)');
 }
 if (msg.error) die('response flagged as error: ' + (textOf(msg.content) || msg.text || '').slice(0, 500));
 console.log(JSON.stringify({
@@ -253,3 +296,5 @@ console.log(JSON.stringify({
   seconds: Math.round((Date.now() - t0) / 100) / 10,
   text: textOf(msg.content) || msg.text || '',
 }));
+// Safety net: leave even if some handle (a lingering connection) would keep the process alive.
+setTimeout(() => process.exit(0), 2000).unref();
