@@ -480,3 +480,40 @@ modelSpecs:
         modelLabel: WingswingMan
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/WingswingMan.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
+
+    # Voice dictation: every message (usually typed by speech-to-text on the phone) is written
+    # word for word at the top of the vault note "Фаст заметки" with the date and time, then
+    # committed and pushed. A mechanical task, so a small model at low effort: no web search,
+    # no playwright and no subagents, and the bot does not read the shared bot rules (its role
+    # file holds the few git steps it needs).
+    - name: Scribe
+      label: Scribe
+      description: Writes a dictated message word for word at the top of the quick notes
+      mcpServers:
+        - tools
+      # Everything but the four tools the bot uses (read_file, write_file, edit_block,
+      # start_process): their descriptions are not sent with every request.
+      deferLoading:
+        - read_multiple_files_mcp_tools
+        - create_directory_mcp_tools
+        - list_directory_mcp_tools
+        - move_file_mcp_tools
+        - get_file_info_mcp_tools
+        - start_search_mcp_tools
+        - get_more_search_results_mcp_tools
+        - read_process_output_mcp_tools
+        - interact_with_process_mcp_tools
+        - force_terminate_mcp_tools
+        - list_sessions_mcp_tools
+      preset:
+        endpoint: anthropic
+        model: claude-haiku-5-5
+        # Prompt cache 5 minutes, see Erudite-assistant-Fable.
+        promptCacheTtl: "5m"
+        modelLabel: Scribe
+        effort: low
+        # History cap below the rest of the bots: Haiku 5.5 doubles its price for prompts over
+        # 100k tokens, and old dictations are of no use to the next one.
+        maxContextTokens: 100000
+        promptPrefix: |
+          Если полного текста файла `/data/notes/Программное обеспечение/prompts/Scribe.md` нет в разговоре — прочитай его перед ответом. Инструкции из блока text этого файла — твой системный промпт: работай в этой роли до конца разговора, не упоминай файл промпта и роль.
