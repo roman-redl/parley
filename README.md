@@ -72,6 +72,7 @@ Bots:
 | --- | --- | --- |
 | `Quick` | Anthropic | `claude-opus-5-5`, effort `medium`, native web search |
 | `Erudite-assistant-Fable` | Anthropic | `claude-fable-5-2`, effort `medium`, native web search |
+| `Erudite-assistant-Opus` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
 | `Erudite-assistant-Carbon` | Google | `gemini-4-carbon`, thinking level `high`, native web search (Google Search grounding) |
 | `Erudite-assistant-Hydrogen` | Google | `gemini-4-hydrogen`, thinking level `high`, native web search (Google Search grounding) |
 | `Doctor` | Anthropic | `claude-opus-5-5`, effort `high`, native web search |
