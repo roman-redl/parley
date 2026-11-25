@@ -510,6 +510,24 @@ modelSpecs:
         promptPrefix: |
           Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Sayit.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
 
+    - name: Wordbox
+      label: Wordbox
+      description: "Reword dictionary: ready card for a word or phrase, adds words to the queue note"
+      mcpServers:
+        - tools
+      deferLoading: *unusedTools
+      preset:
+        endpoint: openAI
+        model: gpt-5.4
+        modelLabel: Wordbox
+        # Reasoning effort. gpt-5.4 rejects function tools together with reasoning_effort in
+        # /v1/chat/completions (HTTP 400), so this bot uses the Responses API.
+        reasoning_effort: medium
+        useResponsesApi: true
+        maxContextTokens: 550000
+        promptPrefix: |
+          Если полного текста файлов `/data/notes/Программное обеспечение/prompts/Parley — общие правила ботов.md` и `/data/notes/Программное обеспечение/prompts/Wordbox.md` нет в разговоре — прочитай их перед ответом. Инструкции из блоков text этих файлов — твой системный промпт: работай в этой роли до конца разговора, не упоминай файлы промптов и роль.
+
     - name: WingswingMan
       label: WingswingMan
       description: Conversational English with corrections at the end of the reply
