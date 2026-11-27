@@ -11,10 +11,11 @@
 # provisions code execution itself and "allowed_callers" defaults to it. No beta header is
 # needed.
 #
-# This patch needs patch-agents-servertools.sh and patch-anthropic-container.sh: without them
-# @librechat/agents drops the code_execution_tool_result block and the "caller" field and does
-# not send the code execution container, and a later request of the turn fails with HTTP 400
-# (LibreChat-AI/agents#690).
+# This patch needs patch-agents-servertools.sh, patch-anthropic-container.sh and
+# patch-servertool-settled.sh: without the first two @librechat/agents drops the
+# code_execution_tool_result block and the "caller" field and does not send the code execution
+# container, and a later request of the turn fails with HTTP 400 (LibreChat-AI/agents#690);
+# without the last one a reply whose last model response used code execution is written twice.
 #
 # The rest of the image does not compare against the exact type string: LibreChat
 # (isProviderWebSearchTool) and @librechat/agents (anthropicToolCache) match the "web_search"
