@@ -41,8 +41,9 @@
 #      once in the next response, and the request after that failed with the 400 above (seen when a
 #      turn takes four or more requests).
 #
-# Drop this patch after upgrading to a LibreChat whose @librechat/agents includes PR #720 and the
-# allowed types fix (LibreChat-AI/agents#690 fixed); it is needed only while patch-websearch.sh
+# Drop this patch after upgrading to a LibreChat whose @librechat/agents is 4.2.13 or later: PR #720
+# and the allowed types fix were consolidated into LibreChat-AI/agents#736 (LibreChat-AI/agents#690
+# fixed); it is needed only while patch-websearch.sh
 # is in use.
 #
 # The script fails if an expected text is not found exactly once in each file: a LibreChat

@@ -38,7 +38,7 @@
 # the web_search calls are marked by the library (except a search that failed or found nothing,
 # which this patch also settles). Drop this
 # patch after upgrading to a LibreChat whose @librechat/agents treats settled server tool calls as
-# invoked (checked: not in 4.2.15). Not reported upstream yet.
+# invoked (checked: not in 4.2.15). Proposed upstream as LibreChat-AI/agents#757.
 #
 # The script fails if the expected text is not found exactly once in each file: a LibreChat
 # upgrade that changes @librechat/agents must be noticed at build time. Running it twice fails
